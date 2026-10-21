@@ -236,6 +236,23 @@ test("agentic roguelike prompt resumes paused battles before deployment", () => 
   assert.match(prompt, /开局分队、初始干员、招募谁/);
   assert.match(prompt, /不要先随便选完再汇报/);
   assert.match(prompt, /不要标题、编号、动作数清单、客服式总结/);
+  assert.match(prompt, /希望账本/);
+  assert.match(prompt, /禁止因为第一张看起来不错就把希望花光/);
+  assert.match(prompt, /carry\/enabler\/patch\/skip/);
+});
+
+test("roguelike prompt receives only active learned strategy evidence", () => {
+  const prompt = buildGameplayPrompt({
+    target: { name: "明日方舟", objective: "肉鸽", maxActions: 20 },
+    device: "d", packageName: "com.hypergryph.arknights",
+    agenticMode: { id: "arknights-roguelike" },
+    brainContext: { skills: [
+      { domain: "arknights_roguelike", status: "active", name: "保留希望", trigger: "希望不足", steps: ["先看未来券"] },
+      { domain: "arknights_roguelike", status: "candidate", name: "未经验证", trigger: "任何时候", steps: [] },
+    ] },
+  });
+  assert.match(prompt, /保留希望/);
+  assert.doesNotMatch(prompt, /未经验证/);
 });
 
 test("gameplay QQ summary uses the explicit persona line instead of the full report", () => {

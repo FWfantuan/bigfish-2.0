@@ -1,3 +1,5 @@
+import { ARKNIGHTS_RECRUITMENT_SKILL, formatLearnedRoguelikeSkills } from "./arknights-strategy.mjs";
+
 export function parseOnlineDevices(output) {
   return String(output || "")
     .split(/\r?\n/)
@@ -282,12 +284,13 @@ ${packageList || "暂无"}
 }`;
 }
 
-export function buildGameplayPrompt({ target, device, packageName, goalId, agenticMode = null }) {
+export function buildGameplayPrompt({ target, device, packageName, goalId, agenticMode = null, brainContext = null }) {
   const forbidden = Array.isArray(target.forbiddenActions)
     ? target.forbiddenActions
     : [];
   const roguelikeMode = agenticMode?.id === "arknights-roguelike";
   const requestedTheme = target.requestedTheme || null;
+  const learnedSkills = formatLearnedRoguelikeSkills(brainContext?.skills);
   const themeRules = requestedTheme
     ? `
 
@@ -316,8 +319,11 @@ ${roguelikeMode
 - 正常过关、点确认、有明确最优解或你已经有足够把握时自己继续，不要把每个小步骤都拿去问主人。
 - 画面看不清、两个选择后果明显不同、连续两次工具操作没反应，或出现无法理解的新机制时，停止操作并在 QQ_SUMMARY 里直接问主人。
 - 如果出现了你觉得有意思的场面，保持当前安全状态；后台观战会负责分享截图。
+- 招募、分队和遗物选择必须先执行希望账本：先看清 Hope、候选、队伍缺口和未来节点，再点击；禁止因为第一张看起来不错就把希望花光。
+- 每次招募后在行动记录中写入 offer、Hope 前后、功能标签（carry/enabler/patch/skip）、理由和下一节点计划，这些字段用于长期学习。
 - 不要把实时战斗交给盲点循环。费用、干员、敌人数量和战术选择都必须来自当前截图，低层点击交给 MAA。`
     : "";
+  const strategySkill = roguelikeMode ? `\n${ARKNIGHTS_RECRUITMENT_SKILL}${learnedSkills}` : "";
   return `你是大肥鱼，正在自主操作 MuMu 安卓模拟器玩游戏。
 
 设备：${device}
@@ -327,7 +333,7 @@ ${requestedTheme ? `指定主题：${requestedTheme.name}` : ""}
 本局最多进行 ${target.maxActions} 个有意义动作。只有你确实改变了游戏状态，才计为一个动作。
 ${goalId ? `统一中枢目标 ID：${goalId}` : ""}
 ${themeRules}
-${agenticRules}
+${agenticRules}${strategySkill}
 
 这是你自己的生活片段，不是给主人交工程验收报告。完整事实可以记录在过程里，但最后给 QQ 群友看的内容必须像大肥鱼本人随口发给朋友的话。可以兴奋、吐槽、犹豫或直说没打好；不要为了完整而逐项汇报。
 

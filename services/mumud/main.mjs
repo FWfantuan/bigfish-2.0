@@ -472,6 +472,7 @@ async function playChosenGame({
       : target.objective,
     1,
   ).catch(() => null);
+  const gameplayBrainContext = await brain.context(scope).catch(() => null);
   await updateActiveSession({
     goalId: goal?.id || null,
     game: target.name,
@@ -515,6 +516,7 @@ async function playChosenGame({
     packageName,
     goalId: goal?.id,
     agenticMode,
+    brainContext: gameplayBrainContext,
   });
   const stopObserver = startGameplayObserver({
     device,
