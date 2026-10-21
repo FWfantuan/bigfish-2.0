@@ -7,6 +7,10 @@ const qqPlugin = resolve(
   dshHome,
   "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/plugin.js",
 );
+const qqSecurity = resolve(
+  dshHome,
+  "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/security.js",
+);
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
 );
@@ -35,6 +39,40 @@ await patch(
         "    // without opening the Web UI on DSH 0.1.7.",
         "    await runtime.reconcile(entry);",
         "    if (settings === undefined)",
+      ].join("\n"),
+    ),
+);
+
+await patch(
+  qqSecurity,
+  "BIGFISH_ALLOWED_GROUPS",
+  (source) =>
+    source.replace(
+      [
+        "    allow(evt) {",
+        "        if (this.opts.mode === 'open')",
+        "            return true;",
+        "        const adminId = this.opts.adminId ?? this.opts.adminQq;",
+        "        return evt.user_id === adminId || this.opts.allowlist.includes(evt.user_id);",
+        "    }",
+      ].join("\n"),
+      [
+        "    allow(evt) {",
+        "        const adminId = this.opts.adminId ?? this.opts.adminQq;",
+        "        if (evt.message_type === 'private')",
+        "            return evt.user_id === adminId;",
+        "        if (evt.message_type === 'group') {",
+        "            const groupAllowlist = String(process.env.BIGFISH_ALLOWED_GROUPS ?? '')",
+        "                .split(',')",
+        "                .map((value) => value.trim())",
+        "                .filter(Boolean);",
+        "            if (groupAllowlist.length > 0 && !groupAllowlist.includes(String(evt.group_id)))",
+        "                return false;",
+        "        }",
+        "        if (this.opts.mode === 'open')",
+        "            return true;",
+        "        return evt.user_id === adminId || this.opts.allowlist.includes(evt.user_id);",
+        "    }",
       ].join("\n"),
     ),
 );

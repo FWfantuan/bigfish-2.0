@@ -22,7 +22,7 @@
       cwd: .
       streamReasoning: false
       maxMessageLength: 4500
-      ackMessage: 收到，我先看看。
+      ackMessage: ""
       qqReplyStyleSkill:
         enabled: true
         skillName: qq-session-reply-style

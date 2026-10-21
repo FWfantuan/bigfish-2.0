@@ -1,4 +1,4 @@
-const ACTIONS = new Set(["wait", "group_message", "private_message"]);
+const ACTIONS = new Set(["wait", "group_message"]);
 
 export function normalizeDecision(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -51,14 +51,13 @@ export function validateDecision(decision, context) {
   if (decision.action === "group_message") {
     const target = decision.targetGroup || groupId;
     if (!config.groups.includes(target)) return { ok: false, reason: "group-not-allowed" };
-    if (decision.atQq && !recentSenderIds.has(decision.atQq) && decision.atQq !== config.ownerQQ) {
+    if (!decision.atQq) return { ok: false, reason: "mention-required" };
+    if (!recentSenderIds.has(decision.atQq) && decision.atQq !== config.ownerQQ) {
       return { ok: false, reason: "mention-not-in-context" };
     }
     return { ok: true, decision: { ...decision, targetGroup: target } };
   }
-
-  if (!config.privateAllowlist.includes(decision.targetQq)) return { ok: false, reason: "private-target-not-allowed" };
-  return { ok: true, decision };
+  return { ok: false, reason: "private-action-disabled" };
 }
 
 function clampNumber(value, min, max, fallback) {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -10,7 +11,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Star, StarTools, register
 
 
-OWNER = "2440298506"
+OWNER = os.environ.get("BIGFISH_OWNER_QQ", "")
 
 
 class AgentStore:

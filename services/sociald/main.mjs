@@ -7,8 +7,8 @@ import { normalizeDecision, validateDecision } from "./policy.mjs";
 import { buildPrompt } from "./prompt.mjs";
 import { SocialState } from "./state.mjs";
 
-const config = await loadConfig(process.env.BIGFISH_SOCIAL_CONFIG || "config/social.json");
 await loadEnvironmentFiles([".env", resolve(homedir(), ".dsh/.env")]);
+const config = await loadConfig(process.env.BIGFISH_SOCIAL_CONFIG || "config/social.json");
 const state = new SocialState(process.env.BIGFISH_STATE_PATH || "data/social/state.json");
 await state.load();
 const dsh = new DshDecisionMaker(config.dsh);
@@ -87,16 +87,6 @@ async function evaluateGroup(groupId) {
         at: Date.now(),
       });
       log(`group=${chosen.targetGroup} proactive message sent: ${chosen.reason}`);
-    } else if (chosen.action === "private_message") {
-      await connection.sendPrivate(chosen.targetQq, chosen.message);
-      state.appendAction({
-        type: "private_message",
-        targetQq: chosen.targetQq,
-        message: chosen.message,
-        reason: chosen.reason,
-        at: Date.now(),
-      });
-      log(`private target=${chosen.targetQq} proactive message sent: ${chosen.reason}`);
     } else {
       log(`group=${groupId} chose to wait: ${chosen.reason || "no reason"}`);
     }

@@ -11,6 +11,7 @@
 - Cua Driver 原生桌面控制，可枚举应用、观察窗口、点击、输入、滚动和拖拽
 - Android ADB 控制，支持设备发现、截图、UI 树、点击、输入、应用启动和日志
 - 主动社交服务：群聊观察、人格状态、长期记忆、行动理由、冷却和主动艾特
+- 旧 AstrBot 人格卡、122 条 LivingMemory 和 108 个成员身份已迁移到本地私有记忆
 - B站观看/评论与设备控制 Skills
 
 ## 结构
@@ -43,6 +44,7 @@ pnpm social:test
 
 - [迁移到 DSH](docs/migration-to-dsh.md)
 - [主动社交层](docs/active-social.md)
+- [人格与记忆迁移](docs/memory-migration.md)
 
 ## 旧 AstrBot 命令
 

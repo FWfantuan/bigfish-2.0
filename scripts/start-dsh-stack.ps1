@@ -2,6 +2,17 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $logRoot = Join-Path $projectRoot 'work'
 $pnpm = (Get-Command pnpm.cmd -ErrorAction Stop).Source
+$dshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
+$envFile = Join-Path $dshHome '.env'
+if (-not (Test-Path -LiteralPath $envFile)) { throw "Missing DSH environment file: $envFile" }
+$dshEnv = @{}
+Get-Content -LiteralPath $envFile | ForEach-Object {
+    if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
+        $dshEnv[$matches[1]] = $matches[2]
+    }
+}
+$botQq = $dshEnv['BIGFISH_BOT_QQ']
+if (-not $botQq) { throw 'BIGFISH_BOT_QQ is missing from DSH_HOME/.env' }
 
 function Start-HiddenService {
     param(
@@ -28,12 +39,12 @@ function Start-HiddenService {
 }
 
 $napcatMain = Get-CimInstance Win32_Process |
-    Where-Object { $_.Name -eq 'NapCatWinBootMain.exe' -and $_.CommandLine -match '-q 1844465930' } |
+    Where-Object { $_.Name -eq 'NapCatWinBootMain.exe' -and $_.CommandLine -match "-q $botQq" } |
     Select-Object -First 1
 if (-not $napcatMain) {
     $launcher = 'C:\Users\Administrator\AppData\Local\NapCat\launcher-win10-user.bat'
     Start-Process -FilePath $launcher `
-        -ArgumentList @('-q', '1844465930') `
+        -ArgumentList @('-q', $botQq) `
         -WorkingDirectory 'C:\Users\Administrator\AppData\Local\NapCat' `
         -WindowStyle Hidden
     Write-Output 'NapCat bot instance starting'

@@ -38,10 +38,22 @@ function merge(base, value) {
 export async function loadConfig(path = "config/social.json") {
   const raw = JSON.parse(await readFile(resolve(path), "utf8"));
   const config = merge(DEFAULTS, raw);
-  config.botQQ = String(config.botQQ || "");
-  config.ownerQQ = String(config.ownerQQ || "");
-  config.groups = config.groups.map(String);
-  config.privateAllowlist = config.privateAllowlist.map(String);
+  config.botQQ = expandEnv(String(config.botQQ || ""));
+  config.ownerQQ = expandEnv(String(config.ownerQQ || ""));
+  config.groups = expandList(config.groups);
+  config.privateAllowlist = expandList(config.privateAllowlist);
+  if (!config.botQQ || !config.ownerQQ) throw new Error("BIGFISH_BOT_QQ and BIGFISH_OWNER_QQ are required");
   if (!config.groups.length) throw new Error("social groups allowlist is empty");
   return config;
+}
+
+function expandEnv(value) {
+  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) => process.env[name] || "");
+}
+
+function expandList(values) {
+  return values
+    .flatMap((value) => expandEnv(String(value)).split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
 }

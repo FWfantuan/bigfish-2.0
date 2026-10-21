@@ -4,17 +4,13 @@
     "url": "ws://127.0.0.1:3001",
     "tokenEnv": "BIGFISH_ONEBOT_TOKEN"
   },
-  "botQQ": "1844465930",
-  "ownerQQ": "2440298506",
+  "botQQ": "${BIGFISH_BOT_QQ}",
+  "ownerQQ": "${BIGFISH_OWNER_QQ}",
   "groups": [
-    "805070822",
-    "1109623435",
-    "1107268998",
-    "298120434",
-    "651443202"
+    "${BIGFISH_ALLOWED_GROUPS}"
   ],
   "privateAllowlist": [
-    "2440298506"
+    "${BIGFISH_OWNER_QQ}"
   ],
   "evaluation": {
     "debounceMs": 45000,
@@ -28,7 +24,7 @@
     "maxMessageChars": 300
   },
   "dsh": {
-    "profile": "bigfish-worker",
+    "profile": "bigfish-social",
     "timeoutMs": 180000
   },
   "persona": {
@@ -44,6 +40,8 @@
     "boundaries": [
       "不编造自己做过但实际没有完成的事",
       "不连续刷屏，不重复刚说过的话",
+      "主动聊天只能在白名单群里艾特成员，禁止私聊",
+      "B站、浏览器、电脑和手机只能由主人在白名单群明确要求后使用",
       "不发广告，不泄露私聊内容",
       "高风险动作先停下来"
     ]

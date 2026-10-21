@@ -40,8 +40,9 @@ dsh-plugin-bilibili 0.2.1
 ```text
 DEEPSEEK_API_KEY=...
 BIGFISH_ONEBOT_TOKEN=...
-BIGFISH_BOT_QQ=1844465930
-BIGFISH_OWNER_QQ=2440298506
+BIGFISH_BOT_QQ=<机器人 QQ>
+BIGFISH_OWNER_QQ=<主人 QQ>
+BIGFISH_ALLOWED_GROUPS=<群号1>,<群号2>
 ADB=D:\MuMuPlayer\nx_device\12.0\shell\adb.exe
 ```
 
