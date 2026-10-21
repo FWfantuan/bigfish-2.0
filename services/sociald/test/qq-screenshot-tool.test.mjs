@@ -14,6 +14,18 @@ test("owner screenshot sharing is direct and remains owner-bound", async () => {
   assert.doesNotMatch(source, /request_confirmation|confirm\(|等待主人确认/);
 });
 
+test("game screenshots and status stay bound to the initiating group", async () => {
+  const [screenshot, gameplay] = await Promise.all([
+    readFile("patches/qq-screenshot-tool.snippet.js", "utf8"),
+    readFile("patches/qq-game-request-tool.snippet.js", "utf8"),
+  ]);
+
+  assert.match(screenshot, /activeGroupId.*!== String\(targetId\)/s);
+  assert.match(screenshot, /游戏截图只能发回发起群/);
+  assert.match(gameplay, /游戏状态只能由发起群读取/);
+  assert.match(gameplay, /不能在当前群插队开新游戏/);
+});
+
 test("QQ history preserves pre-mention context across DSH restarts", async () => {
   const source = await readFile("patches/qq-recent-history.snippet.js", "utf8");
 

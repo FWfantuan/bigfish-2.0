@@ -46,11 +46,24 @@ function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
             const isOwner = globalThis.__bigfishQqOwnerBySession?.get(sessionId) === true;
             if (!isOwner)
                 throw new Error('只有主人本人明确要求时才能触发自动游戏');
-            const [{ mkdir, rename, writeFile }, { dirname, resolve }] = await Promise.all([
+            const [{ mkdir, readFile, rename, writeFile }, { dirname, resolve }] = await Promise.all([
                 import('node:fs/promises'),
                 import('node:path'),
             ]);
             const projectRoot = process.env.BIGFISH_PROJECT_ROOT || process.cwd();
+            const readJson = async (path) => {
+                try {
+                    return JSON.parse(await readFile(path, 'utf8'));
+                }
+                catch {
+                    return null;
+                }
+            };
+            const state = await readJson(resolve(projectRoot, 'data', 'mumud', 'state.json'));
+            const activeGroupId = String(state?.activeGroupId || state?.activeSession?.groupId || '');
+            if (state?.running === true && activeGroupId && activeGroupId !== String(groupId)) {
+                throw new Error('当前游戏由另一个白名单群发起，不能在当前群插队开新游戏');
+            }
             const requestPath = resolve(projectRoot, 'data', 'mumud', 'request.json');
             await mkdir(dirname(requestPath), { recursive: true });
             const request = {
@@ -111,6 +124,10 @@ function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
                 readJson('question.active.json'),
             ]);
             const activeSession = state?.activeSession ?? null;
+            const activeGroupId = String(state?.activeGroupId || activeSession?.groupId || '');
+            if (state?.running === true && activeGroupId && activeGroupId !== String(target)) {
+                throw new Error('当前游戏由另一个白名单群发起；游戏状态只能由发起群读取');
+            }
             const value = {
                 group_id: String(target),
                 running: state?.running === true,

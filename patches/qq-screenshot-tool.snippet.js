@@ -67,11 +67,24 @@ function registerBigFishScreenshotTool(ctx, client, cfg, officialMode) {
                 .map((parts) => parts[0]);
             const projectRoot = process.env.BIGFISH_PROJECT_ROOT || process.cwd();
             let preferredDevice = '';
+            let gameplayState = null;
             try {
-                const status = JSON.parse(await readFile(resolve(projectRoot, 'data', 'mumud', 'status.json'), 'utf8'));
+                const [status, state] = await Promise.all([
+                    readFile(resolve(projectRoot, 'data', 'mumud', 'status.json'), 'utf8')
+                        .then((value) => JSON.parse(value)),
+                    readFile(resolve(projectRoot, 'data', 'mumud', 'state.json'), 'utf8')
+                        .then((value) => JSON.parse(value)),
+                ]);
                 preferredDevice = String(status.device || '');
+                gameplayState = state;
             } catch {
                 // A stopped gameplay worker is fine; use any online device.
+            }
+            if (scope === 'group' && gameplayState?.running === true) {
+                const activeGroupId = String(gameplayState.activeGroupId || gameplayState.activeSession?.groupId || '');
+                if (activeGroupId && activeGroupId !== String(targetId)) {
+                    throw new Error('当前游戏由另一个白名单群发起，游戏截图只能发回发起群');
+                }
             }
             const device = onlineDevices.includes(preferredDevice)
                 ? preferredDevice
