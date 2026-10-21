@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildGameChoicePrompt,
   buildGameplayPrompt,
+  extractGameplayQqSummary,
   findTargetPackage,
   normalizeGameChoice,
   parseInstalledPackages,
@@ -173,4 +174,18 @@ test("gameplay prompt carries action limits, vision failure handling and safety 
   assert.match(prompt, /没有真正的 image 引用/);
   assert.match(prompt, /充值、购买、看广告/);
   assert.match(prompt, /goal-1/);
+  assert.match(prompt, /QQ_SUMMARY/);
+});
+
+test("gameplay QQ summary uses the explicit persona line instead of the full report", () => {
+  const raw = [
+    "# 详细报告",
+    "- 进入 17-18",
+    "- 演习模式失败",
+    "QQ_SUMMARY: 这局我去 17-18 试了下 演习没烧理智 还是没打过 先撤了",
+  ].join("\n");
+  assert.equal(
+    extractGameplayQqSummary(raw),
+    "这局我去 17-18 试了下 演习没烧理智 还是没打过 先撤了",
+  );
 });

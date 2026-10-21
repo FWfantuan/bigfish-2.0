@@ -24,6 +24,8 @@ The QQ chat route and gameplay route are separate. The QQ session may use a text
 
 The worker starts at most one play decision per online emulator session. A 60-minute cooldown prevents repeated decisions while MuMu stays open. Taking MuMu offline clears the previous session timestamp, so closing and reopening the emulator gives BigFish a new opportunity to decide.
 
+The full tool trajectory and factual report are retained for Brain learning, but the QQ group receives only the play agent's `QQ_SUMMARY` line. The prompt requires 2–4 short, casual sentences in BigFish's voice without Markdown headings or task-report formatting.
+
 An explicit owner request is different from the routine autonomous cooldown. The QQ tool `bigfish_request_gameplay` verifies the current group and the platform-provided `is_owner=true` identity before writing a short-lived request to `data/mumud/request.json`. `mumud` atomically consumes that request, bypasses routine cooldown, records it in Brain, and sends one real emulator screenshot after launch. Safety rules are not bypassed.
 
 Named games can be mapped to their installed package in `gameAliases`. When an owner request exactly matches a configured alias and that package is installed, the worker starts it directly instead of spending another model turn deciding whether to play it. The autonomous choice path remains for open requests such as “随便玩”.

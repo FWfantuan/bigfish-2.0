@@ -92,6 +92,25 @@ export function validateGameplayRequest(request, expectedGroup, now = Date.now()
     && request.isOwner === true;
 }
 
+export function extractGameplayQqSummary(text) {
+  const source = String(text || "").trim();
+  const marker = "QQ_SUMMARY:";
+  const markerIndex = source.lastIndexOf(marker);
+  if (markerIndex >= 0) {
+    const summary = source.slice(markerIndex + marker.length).trim();
+    if (summary) return summary.slice(0, 800);
+  }
+  const fallback = source
+    .replace(/```(?:markdown|text)?/gi, "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*(?:#{1,6}|[-*+]|\d+[.)])\s*/, "").replace(/\*\*/g, "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (fallback || "这局打完了，详细结果已经记到脑内。").slice(0, 500);
+}
+
 export function normalizeGameChoice(decision, thirdPartyPackages, fallback = {}) {
   if (!decision || typeof decision !== "object") {
     return { action: "skip", reason: "没有产生有效的游戏选择" };
@@ -178,6 +197,8 @@ export function buildGameplayPrompt({ target, device, packageName, goalId }) {
 本局最多进行 ${target.maxActions} 个有意义动作。只有你确实改变了游戏状态，才计为一个动作。
 ${goalId ? `统一中枢目标 ID：${goalId}` : ""}
 
+这是你自己的生活片段，不是给主人交工程验收报告。完整事实可以记录在过程里，但最后给 QQ 群友看的内容必须像大肥鱼本人，短、口语化，不要标题、编号清单或客服总结。
+
 执行规则：
 - 先用 android_devices 确认设备，再用 android_ui_tree 和 android_screenshot 观察 MuMu 窗口。
 - 每次操作后重新观察结果，不复用旧元素或坐标。
@@ -191,5 +212,5 @@ ${goalId ? `统一中枢目标 ID：${goalId}` : ""}
 - android_screenshot 的结果里若没有真正的 image 引用，说明视觉输入没有接通，立即停止，不要盲点坐标。
 - 严禁 ${forbidden.join("、") || "充值、购买、看广告、修改账号、删除数据或交易"}。
 - 不要主动进入商店、充值、购买、会员或交易页面。遇到支付、广告、实名认证、隐私授权、账号登录、商业活动弹窗，立即停止并报告。
-- 不说空话。最后用几句话报告实际玩到的关卡、动作数量和停止原因。`;
+- 不说空话。最后单独输出一行 \`QQ_SUMMARY: \`，后面用 2～4 句短话报告实际玩到的内容、结果和是否碰过高风险操作。`;
 }

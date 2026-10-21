@@ -590,6 +590,31 @@ await patch(
     ),
 );
 
+await patch(
+  qqSecurity,
+  "BIGFISH_GROUP_MEMBER_CHAT",
+  (source) =>
+    source.replace(
+      [
+        "            if (!addressed)",
+        "                return false;",
+        "        }",
+        "        if (this.opts.mode === 'open')",
+      ].join("\n"),
+      [
+        "            if (!addressed)",
+        "                return false;",
+        "            // BIGFISH_GROUP_MEMBER_CHAT: any real @bot in an allowed",
+        "            // group may chat; privileged actions still enforce owner-only",
+        "            // metadata and tool-level checks.",
+        "            if (groupAllowlist.length > 0)",
+        "                return true;",
+        "        }",
+        "        if (this.opts.mode === 'open')",
+      ].join("\n"),
+    ),
+);
+
 {
   const source = await readFile(qqPlugin, "utf8");
   if (!source.includes("bigfishSessionTargets")) {

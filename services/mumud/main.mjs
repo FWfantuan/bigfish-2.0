@@ -10,6 +10,7 @@ import { BrainClient } from "../shared/brain-client.mjs";
 import {
   buildGameChoicePrompt,
   buildGameplayPrompt,
+  extractGameplayQqSummary,
   findTargetPackage,
   normalizeGameChoice,
   parseInstalledPackages,
@@ -301,10 +302,11 @@ async function playChosenGame({
     game: target.name,
     packageName,
     summary,
+    qqSummary: extractGameplayQqSummary(summary),
     completedAt: new Date().toISOString(),
   };
   await saveStatus();
-  await notify(`这局玩完了：${summary}`);
+  await notify(extractGameplayQqSummary(summary));
 }
 
 function brainScope() {
