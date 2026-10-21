@@ -216,8 +216,7 @@ export function createBigFishArknightsTools() {
             "--profile",
             "bigfish-actions",
             "--no-summary",
-            "--log-file",
-            logPath,
+            `--log-file=${logPath}`,
           ],
           {
             cwd: paths.root,
