@@ -19,10 +19,18 @@ const qqAgentHandler = resolve(
   dshHome,
   "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/handlers/agent.js",
 );
+const qqConfig = resolve(
+  dshHome,
+  "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/config.js",
+);
 const qqFramesSnippet = resolve("patches/qq-frames-tool.snippet.js");
 const playProfilePatch = resolve(
   dshHome,
   "profiles/bigfish-play/cordis.patch.yml",
+);
+const qqProfilePatch = resolve(
+  dshHome,
+  "profiles/bigfish017/cordis.patch.yml",
 );
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
@@ -113,6 +121,49 @@ async function ensurePlayWebSearch() {
 
 await ensurePlayWebSearch();
 
+async function ensureQqProgressConfig() {
+  let source;
+  try {
+    source = await readFile(qqProfilePatch, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      console.log(`QQ profile not installed, skipped progress config: ${qqProfilePatch}`);
+      return;
+    }
+    throw error;
+  }
+  if (source.includes("BIGFISH_QQ_PROGRESS_CONFIG")) {
+    console.log(`already patched: ${qqProfilePatch}`);
+    return;
+  }
+  const anchor = "      model: deepseek-v4-flash";
+  if (!source.includes(anchor)) {
+    throw new Error(`QQ progress config anchor not found: ${qqProfilePatch}`);
+  }
+  await writeFile(
+    qqProfilePatch,
+    source.replace(
+      anchor,
+      [
+        "      # BIGFISH_QQ_PROGRESS_CONFIG: keep full tools, but make long work visible.",
+        anchor,
+        "      timeoutMs: 180000",
+        "      timeoutMessage: 我这边卡住了，再艾特我一下",
+        "      progress:",
+        "        messages:",
+        "          - delayMs: 20000",
+        "            text: 我在翻后台，稍等一下",
+        "          - delayMs: 70000",
+        "            text: 还在查，我没装死",
+      ].join("\n"),
+    ),
+    "utf8",
+  );
+  console.log(`patched: ${qqProfilePatch}`);
+}
+
+await ensureQqProgressConfig();
+
 async function patch(path, marker, replace) {
   const source = await readFile(path, "utf8");
   if (source.includes(marker)) {
@@ -150,6 +201,25 @@ for (const androidHostPlugin of androidHostPlugins) {
 }
 
 await patch(
+  qqConfig,
+  "BIGFISH_QQ_PROGRESS_CONFIG",
+  (source) =>
+    source.replace(
+      "        timeoutMessage: z.string().default('agent 无响应，请稍后重试。'),",
+      [
+        "        timeoutMessage: z.string().default('agent 无响应，请稍后重试。'),",
+        "        // BIGFISH_QQ_PROGRESS_CONFIG",
+        "        progress: z.object({",
+        "            messages: z.array(z.object({",
+        "                delayMs: z.number().int().positive(),",
+        "                text: z.string().min(1),",
+        "            })).default([]),",
+        "        }).default({}),",
+      ].join("\n"),
+    ),
+);
+
+await patch(
   qqPlugin,
   "Apply the base entry once so a profile patch can start the",
   (source) =>
@@ -161,6 +231,21 @@ await patch(
         "    // without opening the Web UI on DSH 0.1.7.",
         "    await runtime.reconcile(entry);",
         "    if (settings === undefined)",
+      ].join("\n"),
+    ),
+);
+
+await patch(
+  qqPlugin,
+  "BIGFISH_QQ_PROGRESS_OPTIONS",
+  (source) =>
+    source.replace(
+      "        timeoutMs: cfg.agent.timeoutMs,\n        timeoutMessage: cfg.agent.timeoutMessage,",
+      [
+        "        timeoutMs: cfg.agent.timeoutMs,",
+        "        timeoutMessage: cfg.agent.timeoutMessage,",
+        "        // BIGFISH_QQ_PROGRESS_OPTIONS",
+        "        progressMessages: cfg.agent.progress?.messages ?? [],",
       ].join("\n"),
     ),
 );
@@ -241,6 +326,75 @@ await patch(
         "this.runAgentTurn(ctx, sessionKey, enrichedPayload)",
       );
     if (next === source) throw new Error(`patch target not found: ${qqAgentHandler}`);
+    return next;
+  },
+);
+
+await patch(
+  qqAgentHandler,
+  "BIGFISH_QQ_PROGRESS_HEARTBEAT",
+  (source) => {
+    let next = source.replace(
+      "        let active = true;\n        try {",
+      [
+        "        // BIGFISH_QQ_PROGRESS_HEARTBEAT",
+        "        let active = true;",
+        "        const progressTimers = [];",
+        "        const stopProgress = () => {",
+        "            for (const timer of progressTimers)",
+        "                clearTimeout(timer);",
+        "            progressTimers.length = 0;",
+        "        };",
+        "        const scheduleProgress = () => {",
+        "            for (const item of this.opts.progressMessages ?? []) {",
+        "                const delayMs = Number(item?.delayMs);",
+        "                const text = String(item?.text ?? '').trim();",
+        "                if (!Number.isFinite(delayMs) || delayMs <= 0 || !text)",
+        "                    continue;",
+        "                const timer = setTimeout(() => {",
+        "                    if (!active)",
+        "                        return;",
+        "                    void this.respondChunk(ctx, text).catch(() => undefined);",
+        "                }, delayMs);",
+        "                timer.unref?.();",
+        "                progressTimers.push(timer);",
+        "            }",
+        "        };",
+        "        try {",
+      ].join("\n"),
+    );
+    next = next.replace(
+      "            if (ackMessage)\n                await this.respondChunk(ctx, ackMessage);\n            const canStreamText",
+      [
+        "            if (ackMessage)",
+        "                await this.respondChunk(ctx, ackMessage);",
+        "            else",
+        "                scheduleProgress();",
+        "            const canStreamText",
+      ].join("\n"),
+    );
+    next = next.replace(
+      "                if (kind === 'text')\n                    streamedText.push(chunk);",
+      [
+        "                if (kind === 'text') {",
+        "                    stopProgress();",
+        "                    streamedText.push(chunk);",
+        "                }",
+      ].join("\n"),
+    );
+    next = next.replace(
+      "                active = false;\n                await this.respondAgentOutput(ctx, sessionKey, result || '(no output)');",
+      "                active = false;\n                stopProgress();\n                await this.respondAgentOutput(ctx, sessionKey, result || '(no output)');",
+    );
+    next = next.replace(
+      "            active = false;\n            const final = result || '(no output)';",
+      "            active = false;\n            stopProgress();\n            const final = result || '(no output)';",
+    );
+    next = next.replace(
+      "            active = false;\n            const message = err instanceof AgentTimeoutError",
+      "            active = false;\n            stopProgress();\n            const message = err instanceof AgentTimeoutError",
+    );
+    if (next === source) throw new Error(`progress heartbeat patch target not found: ${qqAgentHandler}`);
     return next;
   },
 );

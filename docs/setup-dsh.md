@@ -26,6 +26,21 @@ dsh-plugin-bilibili 0.2.1
 @deepseek-ai/dsh-experimental-computer-use-cua-driver-native 0.1.6-alpha.1
 ```
 
+QQ 群聊保留完整后台排查工具，不能因为查进程、日志或 ADB 就一直沉默。QQ Bridge 的 `agent.progress.messages` 配置会在没有正文输出时按时间发送进度；默认 20 秒、70 秒各一次，180 秒仍未完成则结束本轮并明确要求重新艾特。进度消息、间隔和超时都可在 profile 配置中调整。
+
+```yaml
+agent:
+  preset: standard
+  timeoutMs: 180000
+  timeoutMessage: 我这边卡住了，再艾特我一下
+  progress:
+    messages:
+      - delayMs: 20000
+        text: 我在翻后台，稍等一下
+      - delayMs: 70000
+        text: 还在查，我没装死
+```
+
 `bigfish-worker` 的插件：
 
 ```text
