@@ -11,6 +11,7 @@
 - Cua Driver 原生桌面控制，可枚举应用、观察窗口、点击、输入、滚动和拖拽
 - Android ADB 控制，支持设备发现、截图、UI 树、点击、输入、应用启动和日志
 - 主动社交服务：群聊观察、人格状态、长期记忆、行动理由、冷却和主动艾特
+- 旧版 60 秒接话窗口：真实 @ 后的连续对话、8 秒延迟自然插话，纯表情不触发回复
 - 旧 AstrBot 人格卡、122 条 LivingMemory 和 108 个成员身份已迁移到本地私有记忆
 - B站观看/评论与设备控制 Skills
 
@@ -35,6 +36,7 @@ pnpm dsh:patch
 pnpm dsh:web
 pnpm dsh:worker
 pnpm social:start
+pnpm reply:start
 pnpm social:test
 ```
 

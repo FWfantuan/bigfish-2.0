@@ -20,6 +20,7 @@ const DEFAULTS = {
     maxMessageChars: 300,
   },
   dsh: { profile: "bigfish-worker", timeoutMs: 180000 },
+  replyWindow: { enabled: true, windowMs: 60000, delayMs: 8000, maxReplyChars: 300 },
   persona: { name: "大肥鱼", style: "", interests: [], boundaries: [] },
 };
 

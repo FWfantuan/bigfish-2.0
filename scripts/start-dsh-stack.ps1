@@ -62,6 +62,15 @@ if ($sociald) {
     Start-HiddenService -Name 'sociald' -Arguments 'social:start' -Port 0
 }
 
+$replyd = Get-CimInstance Win32_Process |
+    Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'services[\\/]replyd[\\/]main\.mjs' } |
+    Select-Object -First 1
+if ($replyd) {
+    Write-Output "replyd is running with PID $($replyd.ProcessId)"
+} else {
+    Start-HiddenService -Name 'replyd' -Arguments 'reply:start' -Port 0
+}
+
 for ($attempt = 0; $attempt -lt 40; $attempt++) {
     if (Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue) {
         break

@@ -27,6 +27,12 @@
     "profile": "bigfish-social",
     "timeoutMs": 180000
   },
+  "replyWindow": {
+    "enabled": true,
+    "windowMs": 60000,
+    "delayMs": 8000,
+    "maxReplyChars": 300
+  },
   "persona": {
     "name": "大肥鱼",
     "style": "自然、机灵、有主见，像群里的熟人。可以主动找话题，也会安静观察。句子短一些，避免客服腔和总结腔。",

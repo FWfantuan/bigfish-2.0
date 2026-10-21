@@ -8,10 +8,13 @@
 | --- | --- |
 | 主人私聊或白名单群 @ 大肥鱼 | NapCat → DSH QQ Bridge → `standard` preset + `AGENTS.md` → 回复原会话 |
 | 没人点名时主动开口 | NapCat → `sociald` → `bigfish-social` → 结构化决定 → 策略检查 → 群内艾特发送 |
+| @ 之后的连续接话 | NapCat → `replyd` → 固定 60 秒窗口 → 8 秒延迟判断 → 群内自然插一句 |
 
 QQ Bridge 的错误只影响被 @ 或私聊的直接回复；主动社交服务使用独立的 OneBot 连接和 DSH worker，不依赖 QQ Bridge 的 preset。
 
 QQ Bridge 在路由前强制拒绝非白名单群，并强制私聊只能来自主人。主动社交使用单独的 `bigfish-social` profile，PowerShell、文件、Web、子 Agent 等外部工具全部禁用。
+
+`replyd` 复刻旧版 `reply_directly` 的接话窗口：真实 @ 后开启 60 秒；机器人回复后，窗口内新文字等待约 8 秒再判断；纯表情只记录背景；点名别人或回复别人时停止插话。
 
 ## 决策循环
 
