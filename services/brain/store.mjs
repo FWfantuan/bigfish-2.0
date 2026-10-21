@@ -22,6 +22,57 @@ function canonicalSkillKey(item) {
     .slice(0, 500);
 }
 
+export function canonicalGoalKey(title) {
+  let value = String(title || "")
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase();
+  value = value.replace(/^合并重复(?:目标)?[：:\s_-]*/u, "");
+  value = value.replace(/[（(][^）)]*(?:合并重复|唯一入口)[^）)]*[）)]/gu, "");
+  value = value.replace(/(?:合并重复(?:目标)?|唯一入口)/gu, "");
+  return value.replace(/[^\p{L}\p{N}]+/gu, "").slice(0, 600);
+}
+
+export function goalsEquivalent(left, right) {
+  const a = canonicalGoalKey(left);
+  const b = canonicalGoalKey(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const topicA = goalTopicText(a);
+  const topicB = goalTopicText(b);
+  if (topicA && topicB) {
+    if (topicA === topicB) return true;
+    if (topicA.length <= 2 && topicB.includes(topicA) || topicB.length <= 2 && topicA.includes(topicB)) return true;
+    if (goalBigramSimilarity(topicA, topicB) >= 0.45) return true;
+  }
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length > b.length ? a : b;
+  return shorter.length >= 8 && longer.includes(shorter);
+}
+
+function goalTopicText(value) {
+  return value
+    .replace(/跟进|验证|检查|确认|问清|说清|回应|处理|推进|修好|修复|合并|重复|目标|主人|大肥鱼|群内|群里|全群|所有群友|通道|可见|最后|那个|这个|那些|这些|什么|怎么|如何|一下|继续/gu, "")
+    .replace(/beta/gu, "")
+    .replace(/^(并|和|与|再|去|把|给|让)+|(并|和|与|再|去|把|给|让)+$/gu, "");
+}
+
+function goalBigramSimilarity(left, right) {
+  const grams = (value) => {
+    const chars = [...value];
+    if (chars.length < 2) return new Set(chars);
+    return new Set(chars.slice(0, -1).map((char, index) => `${char}${chars[index + 1]}`));
+  };
+  const a = grams(left);
+  const b = grams(right);
+  if (a.size === 0 || b.size === 0) return 0;
+  let overlap = 0;
+  for (const value of a) {
+    if (b.has(value)) overlap += 1;
+  }
+  return (2 * overlap) / (a.size + b.size);
+}
+
 export class BrainStore {
   constructor(path) {
     mkdirSync(dirname(path), { recursive: true });
@@ -139,6 +190,21 @@ export class BrainStore {
     return { scope, text: clean };
   }
 
+  replaceFacts(scope, source, facts = []) {
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("DELETE FROM facts WHERE scope=? AND source=?").run(scope, source);
+      for (const fact of facts) {
+        this.addFact(scope, fact.text, { ...fact, source });
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return this.facts(scope, 50).filter((fact) => fact.source === source);
+  }
+
   createGoal(scope, title, detail = "", priority = 3, dueAt = null) {
     const stamp = now();
     const item = { id: randomUUID(), scope, title: String(title).slice(0, 500), detail: String(detail).slice(0, 4000), priority, status: "active", dueAt, createdAt: stamp, updatedAt: stamp };
@@ -147,6 +213,67 @@ export class BrainStore {
       VALUES (?,?,?,?,?,?,?,?,?)
     `).run(item.id, scope, item.title, item.detail, priority, "active", dueAt, stamp, stamp);
     return item;
+  }
+
+  upsertGoal(scope, update = {}) {
+    const title = String(update.title || "").trim();
+    if (!title) return null;
+    const existingGoals = this.goals(scope, "", 200);
+    const requested = update.existing_goal_id
+      ? existingGoals.find((goal) => goal.id === update.existing_goal_id)
+      : undefined;
+    const matched = requested || existingGoals.find((goal) => goalsEquivalent(goal.title, title));
+    if (!matched) {
+      return this.createGoal(
+        scope,
+        title,
+        update.detail || "",
+        Number(update.priority || 3),
+        update.dueAt || null,
+      );
+    }
+
+    const updated = this.updateGoal(matched.id, {
+      title,
+      detail: update.detail ?? matched.detail,
+      priority: update.priority ?? matched.priority,
+      status: update.status ?? matched.status,
+    });
+    for (const duplicate of existingGoals) {
+      if (duplicate.id === matched.id || duplicate.status !== "active") continue;
+      if (!goalsEquivalent(duplicate.title, matched.title) && !goalsEquivalent(duplicate.title, title)) continue;
+      this.updateGoal(duplicate.id, {
+        status: "completed",
+        detail: `${duplicate.detail}\n[已合并到目标：${title}]`,
+      });
+    }
+    return updated;
+  }
+
+  deduplicateGoals(scope) {
+    const active = this.goals(scope, "active", 200);
+    const kept = [];
+    let merged = 0;
+    for (const goal of active) {
+      const target = kept.find((candidate) => goalsEquivalent(candidate.title, goal.title));
+      if (!target) {
+        kept.push(goal);
+        continue;
+      }
+      const preferred = Number(goal.priority) > Number(target.priority)
+        || (Number(goal.priority) === Number(target.priority) && goal.updatedAt > target.updatedAt)
+        ? goal
+        : target;
+      const retired = preferred.id === target.id ? goal : target;
+      this.updateGoal(retired.id, {
+        status: "completed",
+        detail: `${retired.detail}\n[已合并到目标：${preferred.title}]`,
+      });
+      const index = kept.indexOf(target);
+      kept[index] = preferred;
+      merged += 1;
+    }
+    return { scope, merged, remaining: kept.length };
   }
 
   updateGoal(id, update) {
@@ -300,5 +427,9 @@ export class BrainStore {
         UNION ALL SELECT scope FROM actions WHERE reflected=0
       ) GROUP BY scope
     `).all().map((row) => row.scope);
+  }
+
+  allGoalScopes() {
+    return this.db.prepare("SELECT DISTINCT scope FROM goals").all().map((row) => row.scope);
   }
 }

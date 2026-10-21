@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { BrainConsolidator } from "../consolidator.mjs";
-import { BrainStore } from "../store.mjs";
+import { BrainStore, goalsEquivalent } from "../store.mjs";
 
 test("brain stores context, goals, reflections, skills and approvals", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "bigfish-brain-"));
@@ -15,6 +15,8 @@ test("brain stores context, goals, reflections, skills and approvals", async (t)
   });
   store.setSelf("group:1", { mood: "curious", focus: "看看群友在聊什么" });
   store.addFact("group:1", "群友喜欢 FF14", { importance: 0.8 });
+  store.addFact("group:1", "旧能力状态", { source: "runtime_status" });
+  store.replaceFacts("group:1", "runtime_status", [{ text: "当前能力状态", confidence: 1, importance: 1 }]);
   const goal = store.createGoal("group:1", "检查新版本", "等待主人批准");
   store.addEvent("group:1", "message", { text: "新版本开了" });
   store.addAction("group:1", "reply", {}, "收到", true);
@@ -35,7 +37,9 @@ test("brain stores context, goals, reflections, skills and approvals", async (t)
   const context = store.context("group:1");
   assert.equal(context.self.mood, "curious");
   assert.equal(context.goals[0].id, goal.id);
-  assert.equal(context.facts[0].text, "群友喜欢 FF14");
+  assert.equal(context.facts.some((fact) => fact.text === "群友喜欢 FF14"), true);
+  assert.equal(context.facts.some((fact) => fact.text === "旧能力状态"), false);
+  assert.equal(context.facts.some((fact) => fact.text === "当前能力状态"), true);
   assert.equal(context.skills[0].status, "active");
   assert.equal(store.approvals("group:1", "approved")[0].id, approval.id);
 });
@@ -72,4 +76,44 @@ test("consolidator turns experiences into facts and skill candidates", async (t)
   assert.equal(result.facts, 1);
   assert.equal(store.facts("group:2")[0].text, "查版本应优先用官方公告");
   assert.equal(store.skills("group:2", false)[0].status, "candidate");
+});
+
+test("goal deduplication merges variant titles and keeps one active entry", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "bigfish-brain-"));
+  const store = new BrainStore(join(dir, "brain.sqlite3"));
+  t.after(async () => {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  const first = store.createGoal("group:3", "等冰冰把「325」讲清楚", "继续等", 2);
+  store.createGoal("group:3", "合并重复：等冰冰把‘325’讲清楚", "继续等", 3);
+  store.createGoal("group:3", "等冰冰把325讲清楚（合并重复目标）", "继续等", 4);
+  assert.equal(goalsEquivalent(first.title, "合并重复：等冰冰把‘325’讲清楚"), true);
+  assert.equal(
+    goalsEquivalent("跟进大肥鱼2.0 beta 的群内反馈并验证群内可见", "验证 2.0 反馈通道对所有群友可见"),
+    true,
+  );
+  const deduped = store.deduplicateGoals("group:3");
+  assert.equal(deduped.remaining, 1);
+  assert.equal(deduped.merged, 2);
+  assert.equal(store.goals("group:3", "active", 20).length, 1);
+});
+
+test("goal upsert reuses an explicit existing goal id", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "bigfish-brain-"));
+  const store = new BrainStore(join(dir, "brain.sqlite3"));
+  t.after(async () => {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  const goal = store.createGoal("group:4", "跟进反馈", "等待修复", 2);
+  const updated = store.upsertGoal("group:4", {
+    existing_goal_id: goal.id,
+    title: "跟进群内反馈并验证可见",
+    detail: "修好后验证",
+    priority: 1,
+    status: "active",
+  });
+  assert.equal(updated.id, goal.id);
+  assert.equal(store.goals("group:4", "active", 20).length, 1);
 });

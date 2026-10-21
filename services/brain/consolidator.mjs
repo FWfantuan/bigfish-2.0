@@ -34,19 +34,9 @@ export class BrainConsolidator {
         pending.events.map((item) => item.id),
         pending.actions.map((item) => item.id),
       );
+      this.store.deduplicateGoals(scope);
       for (const update of goalUpdates) {
-        if (!update?.title) continue;
-        const existing = this.store.goals(scope, "", 50)
-          .find((goal) => goal.title.trim().toLowerCase() === String(update.title).trim().toLowerCase());
-        if (existing) {
-          this.store.updateGoal(existing.id, {
-            priority: update.priority ?? existing.priority,
-            status: update.status ?? existing.status,
-            detail: update.detail ?? existing.detail,
-          });
-        } else {
-          this.store.createGoal(scope, update.title, update.detail || "", update.priority || 3);
-        }
+        this.store.upsertGoal(scope, update);
       }
       return { scope, facts: facts.length, skills: skills.length, reflection };
     } finally {
@@ -90,7 +80,7 @@ ${JSON.stringify(payload).slice(0, 45000)}
     {"text": "长期稳定的事实或偏好", "confidence": 0.8, "importance": 0.6}
   ],
   "goal_updates": [
-    {"title": "仍需要推进的目标", "detail": "下一步", "priority": 1, "status": "active"}
+    {"existing_goal_id": "复用已有目标时填写它的 id，否则 null", "title": "仍需要推进的目标", "detail": "下一步", "priority": 1, "status": "active"}
   ],
   "skills": [
     {
@@ -108,5 +98,6 @@ ${JSON.stringify(payload).slice(0, 45000)}
 - 同一流程只有确实成功时才生成技能；失败经历写成教训和失败技能。
 - 技能步骤要简短、可执行。
 - 私聊内容不得沉淀到群 scope。
+- 已有目标表里的目标 id 必须优先复用；同一件事只更新已有目标，禁止新建标题带“合并重复”“唯一入口”之类字样的第二条目标。
 - 最多 8 条事实、5 个目标更新、3 个技能。`;
 }

@@ -45,14 +45,30 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       return send(response, 201, store.addFact(String(body.scope), body.text, body));
     }
+    if (request.method === "POST" && url.pathname === "/v1/facts/replace") {
+      const body = await readJson(request);
+      return send(response, 200, store.replaceFacts(
+        String(body.scope),
+        String(body.source),
+        Array.isArray(body.facts) ? body.facts : [],
+      ));
+    }
     if (request.method === "GET" && url.pathname === "/v1/goals") {
       return send(response, 200, store.goals(requiredScope(url), url.searchParams.get("status") ?? "active"));
     }
     if (request.method === "POST" && url.pathname === "/v1/goals") {
       const body = await readJson(request);
-      return send(response, 201, store.createGoal(
-        String(body.scope), body.title, body.detail || "", Number(body.priority || 3), body.dueAt || null,
-      ));
+      return send(response, 201, store.upsertGoal(String(body.scope), {
+        ...body,
+        priority: Number(body.priority || 3),
+        dueAt: body.dueAt || null,
+      }));
+    }
+    if (request.method === "POST" && url.pathname === "/v1/goals/dedupe") {
+      const scopes = url.searchParams.get("scope")
+        ? [url.searchParams.get("scope")]
+        : store.allGoalScopes();
+      return send(response, 200, { results: scopes.map((scope) => store.deduplicateGoals(scope)) });
     }
     if (request.method === "PATCH" && url.pathname.startsWith("/v1/goals/")) {
       const body = await readJson(request);

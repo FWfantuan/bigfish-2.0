@@ -8,7 +8,9 @@ import {
   parseInstalledPackages,
   parseOnlineDevices,
   reconcileDevicePresence,
+  resolveConfiguredGame,
   sessionGate,
+  validateGameplayRequest,
 } from "../core.mjs";
 
 test("parses only online adb devices", () => {
@@ -109,6 +111,49 @@ test("game choice prompt gives BigFish freedom instead of prescribing a game", (
   assert.match(prompt, /可以重温喜欢的东西/);
   assert.match(prompt, /也可以觉得现在没兴致而选择不玩/);
   assert.match(prompt, /com\.example\.game/);
+});
+
+test("owner gameplay requests are short-lived, group-bound and owner-only", () => {
+  const now = Date.parse("2026-10-21T12:00:00Z");
+  const request = {
+    requestedAt: "2026-10-21T11:59:00Z",
+    scope: "group",
+    groupId: "805070822",
+    isOwner: true,
+  };
+  assert.equal(validateGameplayRequest(request, "805070822", now), true);
+  assert.equal(validateGameplayRequest({ ...request, groupId: "1" }, "805070822", now), false);
+  assert.equal(validateGameplayRequest({ ...request, isOwner: false }, "805070822", now), false);
+  assert.equal(validateGameplayRequest({ ...request, requestedAt: "2026-10-21T11:49:00Z" }, "805070822", now), false);
+});
+
+test("owner request is included in the autonomous game choice prompt", () => {
+  const prompt = buildGameChoicePrompt({
+    autonomy: { enabled: true },
+    packages: ["com.example.game"],
+    ownerRequest: {
+      game: "明日方舟",
+      reason: "主人叫我现在去玩",
+    },
+  });
+  assert.match(prompt, /主人在白名单群明确叫你现在玩/);
+  assert.match(prompt, /明日方舟/);
+  assert.match(prompt, /不能绕过任何安全边界/);
+});
+
+test("configured game aliases resolve an owner-named game without another model choice", () => {
+  assert.deepEqual(
+    resolveConfiguredGame(
+      "明日方舟",
+      ["com.hypergryph.arknights", "com.example.game"],
+      { "明日方舟": "com.hypergryph.arknights", FGO: "com.bilibili.fatego" },
+    ),
+    { displayName: "明日方舟", packageName: "com.hypergryph.arknights" },
+  );
+  assert.equal(
+    resolveConfiguredGame("FGO", ["com.hypergryph.arknights"], { FGO: "com.bilibili.fatego" }),
+    null,
+  );
 });
 
 test("gameplay prompt carries action limits, vision failure handling and safety stops", () => {

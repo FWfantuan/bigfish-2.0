@@ -27,6 +27,8 @@ QQ 直聊 / replyd / sociald
 
 同一技能的触发条件重复出现两次后，从 `candidate` 升为 `active`。之后的主动社交和 QQ 对话都会看到这些技能。
 
+目标写入采用 upsert：复盘器优先复用已有目标 ID，并按规范化标题关闭重复条目。`POST /v1/goals` 也不会再无条件新建，而是合并到相同目标。`POST /v1/goals/dedupe?scope=...` 可清理历史遗留的重复目标。
+
 ## 工具审批
 
 主动社交 Agent 没有外部工具。它需要 B站、浏览器、电脑或手机时，只能生成 `request_tool`，在允许的群内艾特主人并创建 Brain approval。

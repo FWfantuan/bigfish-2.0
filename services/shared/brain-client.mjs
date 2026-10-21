@@ -45,6 +45,13 @@ export class BrainClient {
     });
   }
 
+  replaceFacts(scope, source, facts) {
+    return this.request("/v1/facts/replace", {
+      method: "POST",
+      body: { scope, source, facts },
+    });
+  }
+
   action(scope, kind, payload, result, success = true) {
     return this.request("/v1/actions", { method: "POST", body: { scope, kind, payload, result, success } });
   }
@@ -55,6 +62,10 @@ export class BrainClient {
 
   updateGoal(id, update) {
     return this.request(`/v1/goals/${encodeURIComponent(id)}`, { method: "PATCH", body: update });
+  }
+
+  deduplicateGoals(scope) {
+    return this.request(`/v1/goals/dedupe?scope=${encodeURIComponent(scope)}`, { method: "POST", body: {} });
   }
 
   skillContext(scope) {

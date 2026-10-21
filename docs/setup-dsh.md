@@ -28,6 +28,8 @@ dsh-plugin-bilibili 0.2.1
 
 QQ 群聊保留完整后台排查工具，不能因为查进程、日志或 ADB 就一直沉默。QQ Bridge 的 `agent.progress.messages` 配置会在没有正文输出时按时间发送进度；默认 20 秒、70 秒各一次，180 秒仍未完成则结束本轮并明确要求重新艾特。进度消息、间隔和超时都可在 profile 配置中调整。
 
+QQ 群聊模型使用已声明图片输入的 `deepseek-v4-flash-vision-exp`。收到 OneBot 图片段时，Bridge 会下载最多 6 张、单张不超过 12 MiB 的图片到 `data/qq-images`，把本地路径附加给 Agent；Agent 必须先调用 `read_image`，不能根据 `[图片]` 猜内容。
+
 ```yaml
 agent:
   preset: standard

@@ -5,10 +5,15 @@
   "autoLaunchEmulator": false,
   "cooldownMinutes": 60,
   "missingGameReminderMinutes": 360,
+  "gameAliases": {
+    "明日方舟": "com.hypergryph.arknights",
+    "命运-冠位指定": "com.bilibili.fatego",
+    "FGO": "com.bilibili.fatego"
+  },
   "autonomy": {
     "enabled": true,
     "notifyOnSkip": false,
-    "decisionTimeoutMinutes": 10,
+    "decisionTimeoutMinutes": 5,
     "maxSessionMinutes": 12,
     "maxActions": 30,
     "webSearch": true,

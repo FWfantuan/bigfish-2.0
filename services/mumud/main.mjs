@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -15,7 +15,9 @@ import {
   parseInstalledPackages,
   parseOnlineDevices,
   reconcileDevicePresence,
+  resolveConfiguredGame,
   sessionGate,
+  validateGameplayRequest,
 } from "./core.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -24,6 +26,7 @@ const chatConfig = await loadConfig(process.env.BIGFISH_SOCIAL_CONFIG || "config
 const gameConfig = JSON.parse(await readFile("config/gameplay.json", "utf8"));
 const statePath = resolve(process.env.BIGFISH_GAMEPLAY_STATE || "data/mumud/state.json");
 const statusPath = resolve(process.env.BIGFISH_GAMEPLAY_STATUS || "data/mumud/status.json");
+const requestPath = resolve(process.env.BIGFISH_GAMEPLAY_REQUEST || "data/mumud/request.json");
 const state = await loadState(statePath);
 if (state.running) {
   state.running = false;
@@ -45,7 +48,8 @@ const runtimeStatus = {
   currentTarget: null,
   device: state.lastDevice || null,
   capabilities: {
-    chatAgentImageInput: false,
+    chatAgentImageInput: true,
+    chatAgentModel: "deepseek-v4-flash-vision-exp",
     gameAgentImageInput: true,
     gameAgentModel: "deepseek-v4-flash-vision-exp",
     screenshotInputVerified: true,
@@ -55,7 +59,7 @@ const runtimeStatus = {
     tesseractRequired: false,
   },
   explanation:
-    "QQ 聊天层是文本模型；独立的 bigfish-play 自动游戏 worker 才是视觉模型。旧版“图像输入未接通/OCR 缺失/坐标漂移”的结论已被当前修复取代。",
+    "QQ 聊天层和 bigfish-play 游戏层都使用视觉模型；QQ 图片会先保存到本地，Android 截图可作为图像输入。旧版“图像输入未接通/OCR 缺失/坐标漂移”的结论已被当前修复取代。",
   lastSession: null,
 };
 let connection;
@@ -87,11 +91,12 @@ async function poll() {
   try {
     let device = (await listDevices())[0];
     if (!device) {
+      const ownerRequestWaiting = await hasFreshGameplayRequest(notifyGroup);
       let info = await managerInfo();
-      if (!info?.is_android_started && gameConfig.autoLaunchEmulator) {
+      if (!info?.is_android_started && (gameConfig.autoLaunchEmulator || ownerRequestWaiting)) {
         await run(manager, ["control", "-v", "0", "launch"]).catch(() => "");
-        await delay(3000);
-        info = await managerInfo();
+        device = await waitForOnlineDevice(30_000);
+        if (!device) info = await managerInfo();
       }
       if (info?.is_android_started && info?.adb_port) {
         await run(adb, ["connect", `127.0.0.1:${info.adb_port}`]).catch(() => "");
@@ -105,7 +110,16 @@ async function poll() {
       return;
     }
     const now = Date.now();
-    const gate = sessionGate(state, now, gameConfig.cooldownMinutes);
+    const ownerRequest = await consumeGameplayRequest(notifyGroup);
+    if (ownerRequest) {
+      state.lastSessionAt = 0;
+      runtimeStatus.lastRequest = ownerRequest;
+      await saveStatus();
+      await brain.observe(brainScope(), "owner_game_request", ownerRequest, true).catch(() => null);
+      log(`owner gameplay request: ${ownerRequest.game || "self-selected"}`);
+    }
+    const gate = ownerRequest ? { allowed: true, reason: "owner-request", remainingMs: 0 }
+      : sessionGate(state, now, gameConfig.cooldownMinutes);
     if (!gate.allowed) {
       if (gate.reason === "cooldown") await saveState();
       return;
@@ -127,10 +141,15 @@ async function poll() {
       state.lastSessionAt = now;
       await saveState();
       await notify(`看到 MuMu 了，我自己打开“${explicitTarget.name}”玩一会儿。`);
-      await playChosenGame({ device, packageName, target: explicitTarget });
+      await playChosenGame({
+        device,
+        packageName,
+        target: explicitTarget,
+        ownerRequest,
+      });
       return;
     }
-    await chooseAndPlay(device, now);
+    await chooseAndPlay(device, now, ownerRequest);
   } catch (error) {
     log(`poll failed: ${error.message}`);
     if (state.running) {
@@ -143,7 +162,7 @@ async function poll() {
   }
 }
 
-async function chooseAndPlay(device, now) {
+async function chooseAndPlay(device, now, ownerRequest = null) {
   const scope = brainScope();
   const thirdPartyPackages = await adbRun(device, ["shell", "pm", "list", "packages", "-3"])
     .then(parsePackages);
@@ -157,12 +176,38 @@ async function chooseAndPlay(device, now) {
     return;
   }
 
+  const configured = resolveConfiguredGame(ownerRequest?.game, thirdPartyPackages, gameConfig.gameAliases);
+  if (configured) {
+    const target = {
+      name: configured.displayName,
+      objective: autonomy.objective,
+      maxSessionMinutes: Number(autonomy.maxSessionMinutes || 12),
+      maxActions: Number(autonomy.maxActions || 30),
+      webSearch: autonomy.webSearch !== false,
+      forbiddenActions: autonomy.forbiddenActions || [],
+    };
+    runtimeStatus.currentTarget = { name: target.name, packageName: configured.packageName };
+    await saveStatus();
+    state.running = true;
+    await saveState();
+    await notify(`主人点了“${target.name}”，我直接去玩。`);
+    await playChosenGame({
+      device,
+      packageName: configured.packageName,
+      target,
+      selectionReason: ownerRequest.reason || "主人明确指定",
+      ownerRequest,
+    });
+    return;
+  }
+
   const brainContext = await brain.context(scope).catch(() => null);
   const choiceResult = await playDsh.decide({
     prompt: buildGameChoicePrompt({
       autonomy,
       packages: thirdPartyPackages,
       brainContext,
+      ownerRequest,
     }),
     timeoutMs: Number(autonomy.decisionTimeoutMinutes || 10) * 60000,
   });
@@ -208,12 +253,26 @@ async function chooseAndPlay(device, now) {
     target,
     sessionId: choiceResult.sessionId,
     selectionReason: choice.reason,
+    ownerRequest,
   });
 }
 
-async function playChosenGame({ device, packageName, target, sessionId, selectionReason = "" }) {
+async function playChosenGame({
+  device,
+  packageName,
+  target,
+  sessionId,
+  selectionReason = "",
+  ownerRequest = null,
+}) {
   await adbRun(device, ["shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"]);
   await delay(5000);
+  if (ownerRequest) {
+    await sendGameplayScreenshot({ device, game: target.name, reason: ownerRequest.reason }).catch(async (error) => {
+      log(`gameplay screenshot send failed: ${error.message}`);
+      await notify(`游戏开了，但截图没发出去：${error.message.slice(0, 300)}`).catch(() => null);
+    });
+  }
   const scope = brainScope();
   const goal = await brain.goal(
     scope,
@@ -254,12 +313,12 @@ function brainScope() {
 
 async function publishRuntimeCapabilities() {
   await saveStatus();
-  const fact = `能力状态以 data/mumud/status.json 为准：QQ 聊天层 deepseek-v4-flash 是文本模型；独立自动游戏 worker bigfish-play 使用 deepseek-v4-flash-vision-exp，已实际读取 MuMu 截图。横屏点击坐标已按 SurfaceOrientation 修复，登录按钮已实测响应；公开攻略 web_search 已启用且 fetch=false，Tesseract 不是必需。旧结论“图像输入未接通”“Unity 黑屏读不了”“坐标偏移未解决”均已被 ${new Date().toISOString()} 的能力修复取代，不得再据此要求安装 OCR 或拒绝看游戏画面。`;
-  await brain.fact(brainScope(), fact, {
+  const fact = "能力状态以 data/mumud/status.json 为准：QQ 聊天层和 bigfish-play 自动游戏层均使用 deepseek-v4-flash-vision-exp。QQ 用户图片会保存到 data/qq-images，Android 截图也已验证为真实图像输入。横屏点击坐标按 SurfaceOrientation 修复，登录按钮与主界面导航已实测；公开攻略 web_search 已启用且 fetch=false，Tesseract 不是必需。旧结论“QQ 文本模型读不了图”“图像输入未接通”“Unity 黑屏”“坐标偏移未解决”均已被当前能力修复取代。";
+  await brain.replaceFacts(brainScope(), "verified_runtime_capability", [{
+    text: fact,
     confidence: 1,
     importance: 1,
-    source: "verified_runtime_capability",
-  }).catch(() => null);
+  }]).catch(() => null);
   await retireSupersededGameGoals(brainScope());
 }
 
@@ -291,6 +350,74 @@ async function saveStatus() {
   const tmp = `${statusPath}.tmp`;
   await writeFile(tmp, `${JSON.stringify(runtimeStatus, null, 2)}\n`, "utf8");
   await rename(tmp, statusPath);
+}
+
+async function consumeGameplayRequest(expectedGroup) {
+  const claimPath = `${requestPath}.claim-${Date.now()}`;
+  try {
+    await rename(requestPath, claimPath);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    log(`gameplay request claim failed: ${error.message}`);
+    return null;
+  }
+  try {
+    const request = JSON.parse(await readFile(claimPath, "utf8"));
+    if (!validateGameplayRequest(request, expectedGroup)) {
+      log("discarded invalid or stale gameplay request");
+      return null;
+    }
+    return request;
+  } catch (error) {
+    log(`gameplay request parse failed: ${error.message}`);
+    return null;
+  } finally {
+    await unlink(claimPath).catch(() => null);
+  }
+}
+
+async function hasFreshGameplayRequest(expectedGroup) {
+  try {
+    const request = JSON.parse(await readFile(requestPath, "utf8"));
+    return validateGameplayRequest(request, expectedGroup);
+  } catch {
+    return false;
+  }
+}
+
+async function waitForOnlineDevice(timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await delay(2000);
+    const device = (await listDevices())[0];
+    if (device) return device;
+  }
+  return "";
+}
+
+async function sendGameplayScreenshot({ device, game, reason }) {
+  const binary = await execFileAsync(adb, ["-s", device, "exec-out", "screencap", "-p"], {
+    windowsHide: true,
+    timeout: 30000,
+    maxBuffer: 24 * 1024 * 1024,
+    encoding: null,
+  });
+  const bytes = Buffer.isBuffer(binary.stdout) ? binary.stdout : Buffer.from(binary.stdout);
+  if (bytes.length === 0) throw new Error("设备返回空截图");
+  const directory = resolve("data/media/gameplay");
+  await mkdir(directory, { recursive: true });
+  const path = resolve(directory, `${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
+  await writeFile(path, bytes);
+  await connection.action("send_group_msg", {
+    group_id: Number(notifyGroup),
+    message: [
+      { type: "image", data: { file: `base64://${bytes.toString("base64")}` } },
+      {
+        type: "text",
+        data: { text: `\n${game} 已启动。${reason ? `这局目标：${reason}` : ""}` },
+      },
+    ],
+  });
 }
 
 async function listDevices() {
