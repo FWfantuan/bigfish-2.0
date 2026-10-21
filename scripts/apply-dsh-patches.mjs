@@ -291,8 +291,45 @@ async function ensureQqSystemPersona() {
     throw new Error(`custom BigFish preset patch anchors not found: ${qqProfilePatch}`);
   }
   const skillsDir = resolve(dshHome, ".agent-presets/dsh-qq-bridge/skills");
-  const renderedPlugins = next
+  const compatiblePreset = next
+    .replace(/\r\n/g, "\n")
     .replace("__DSH_QQ_BRIDGE_SKILLS_DIR__", JSON.stringify(skillsDir))
+    .replace(
+      [
+        "    - id: workflow-worker-thread",
+        "      name: '@deepseek-ai/dsh-workflow-worker-thread'",
+        "      config:",
+      ].join("\n"),
+      [
+        "    - id: workflow-worker-thread",
+        "      name: '@deepseek-ai/dsh-workflow-worker-thread'",
+        "      disabled: true",
+        "      config:",
+      ].join("\n"),
+    )
+    .replace(
+      [
+        "    - id: tool-workflow",
+        "      name: '@deepseek-ai/dsh-tool-workflow'",
+      ].join("\n"),
+      [
+        "    - id: tool-workflow",
+        "      name: '@deepseek-ai/dsh-tool-workflow'",
+        "      disabled: true",
+      ].join("\n"),
+    )
+    .replace(
+      [
+        "    - id: tool-ralph",
+        "      name: '@deepseek-ai/dsh-tool-ralph'",
+      ].join("\n"),
+      [
+        "    - id: tool-ralph",
+        "      name: '@deepseek-ai/dsh-tool-ralph'",
+        "      disabled: true",
+      ].join("\n"),
+    );
+  const renderedPlugins = compatiblePreset
     .trim()
     .split(/\r?\n/)
     .map((line) => `          ${line}`)
