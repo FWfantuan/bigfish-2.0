@@ -22,6 +22,8 @@ test("gameplay final reports and strategic questions are wired to screenshots", 
   assert.match(main, /gameplay_process_interrupted/);
   assert.match(main, /recordGameplayActivity/);
   assert.match(main, /data\/mumud\/live\.json/);
+  assert.match(main, /screenshot-share\.json/);
+  assert.match(main, /deduplicated/);
   assert.match(main, /applyLiveGameplayEvent/);
   assert.match(main, /stop\.request\.json/);
   assert.match(main, /handleGameplayStopRequest/);

@@ -47,6 +47,7 @@ const statePath = resolve(process.env.BIGFISH_GAMEPLAY_STATE || "data/mumud/stat
 const statusPath = resolve(process.env.BIGFISH_GAMEPLAY_STATUS || "data/mumud/status.json");
 const requestPath = resolve(process.env.BIGFISH_GAMEPLAY_REQUEST || "data/mumud/request.json");
 const liveStatePath = resolve(process.env.BIGFISH_GAMEPLAY_LIVE || "data/mumud/live.json");
+const screenshotSharePath = resolve("data/mumud/screenshot-share.json");
 const stopRequestPath = resolve("data/mumud/stop.request.json");
 const questionRequestPath = resolve("data/mumud/question.request.json");
 const questionActivePath = resolve("data/mumud/question.active.json");
@@ -999,6 +1000,7 @@ function startGameplayQuestionBridge({
       screenshot,
       caption: question,
       mentionOwner: true,
+      sendTextWhenDeduplicated: true,
       groupId,
     });
     await brain.action(brainScope(groupId), "gameplay_question", {
@@ -1043,6 +1045,7 @@ async function sendGameplayFinalReport({
     await sendGameplayImage({
       screenshot,
       caption,
+      sendTextWhenDeduplicated: true,
       groupId,
     });
   } catch (error) {
@@ -1134,6 +1137,7 @@ function startGameplayObserver({
         screenshot,
         caption: observation.text,
         mentionOwner: true,
+        sendTextWhenDeduplicated: true,
         groupId,
       });
       questions += 1;
@@ -1182,8 +1186,11 @@ async function sendGameplayImage({
   screenshot,
   caption,
   mentionOwner = false,
+  sendTextWhenDeduplicated = false,
   groupId = notifyGroup,
 }) {
+  const deduplicated = await recentlySentScreenshot(groupId, screenshot.digest);
+  if (deduplicated && !sendTextWhenDeduplicated) return { sent: false, deduplicated };
   const message = [];
   if (mentionOwner) {
     message.push(
@@ -1191,18 +1198,51 @@ async function sendGameplayImage({
       { type: "text", data: { text: " " } },
     );
   }
-  message.push(
-    { type: "image", data: { file: `base64://${screenshot.bytes.toString("base64")}` } },
-  );
+  if (!deduplicated) {
+    message.push(
+      { type: "image", data: { file: `base64://${screenshot.bytes.toString("base64")}` } },
+    );
+  }
   if (String(caption || "").trim()) {
     message.push(
       { type: "text", data: { text: `\n${String(caption).trim()}` } },
     );
   }
+  if (message.length === 0) return { sent: false, deduplicated };
   await connection.action("send_group_msg", {
     group_id: Number(groupId),
     message,
   });
+  if (!deduplicated) await rememberSentScreenshot(groupId, screenshot);
+  return { sent: true, deduplicated };
+}
+
+async function recentlySentScreenshot(groupId, digest) {
+  try {
+    const marker = JSON.parse(await readFile(screenshotSharePath, "utf8"));
+    const sentAt = Date.parse(marker.at);
+    return marker.groupId === String(groupId)
+      && marker.digest === digest
+      && Number.isFinite(sentAt)
+      && Date.now() - sentAt >= 0
+      && Date.now() - sentAt <= 3 * 60_000;
+  } catch {
+    return false;
+  }
+}
+
+async function rememberSentScreenshot(groupId, screenshot) {
+  const temporary = `${screenshotSharePath}.${process.pid}.${Date.now()}.tmp`;
+  await mkdir(dirname(screenshotSharePath), { recursive: true });
+  await writeFile(temporary, `${JSON.stringify({
+    version: 1,
+    groupId: String(groupId),
+    digest: screenshot.digest,
+    at: new Date().toISOString(),
+    source: "gameplay-worker",
+    path: screenshot.path,
+  }, null, 2)}\n`, "utf8");
+  await rename(temporary, screenshotSharePath);
 }
 
 async function listDevices() {

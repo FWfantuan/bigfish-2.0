@@ -46,11 +46,18 @@ function registerBigFishScreenshotTool(ctx, client, cfg, officialMode) {
             if (scope === 'private' && targetId !== Number(cfg.access.adminQq))
                 throw new Error('私聊截图只允许发送给主人');
 
-            const [{ execFile }, { promisify }, { mkdir, readFile, writeFile }, { resolve }] = await Promise.all([
+            const [
+                { execFile },
+                { promisify },
+                { mkdir, readFile, rename, writeFile },
+                { resolve },
+                { createHash },
+            ] = await Promise.all([
                 import('node:child_process'),
                 import('node:util'),
                 import('node:fs/promises'),
                 import('node:path'),
+                import('node:crypto'),
             ]);
             const execFileAsync = promisify(execFile);
             const adb = process.env.ADB || 'adb';
@@ -110,6 +117,7 @@ function registerBigFishScreenshotTool(ctx, client, cfg, officialMode) {
             const bytes = Buffer.isBuffer(capture.stdout) ? capture.stdout : Buffer.from(capture.stdout);
             if (bytes.length === 0)
                 throw new Error('设备返回空截图');
+            const digest = createHash('sha256').update(bytes).digest('hex');
             const directory = resolve(projectRoot, 'data', 'media', 'screenshots');
             await mkdir(directory, { recursive: true });
             const path = resolve(directory, `${new Date().toISOString().replace(/[:.]/g, '-')}.png`);
@@ -123,6 +131,18 @@ function registerBigFishScreenshotTool(ctx, client, cfg, officialMode) {
                 await client.sendPrivate(targetId, message);
             else
                 await client.sendGroup(targetId, message);
+            const markerPath = resolve(projectRoot, 'data', 'mumud', 'screenshot-share.json');
+            const markerTemporary = `${markerPath}.${process.pid}.${Date.now()}.tmp`;
+            await mkdir(resolve(projectRoot, 'data', 'mumud'), { recursive: true });
+            await writeFile(markerTemporary, `${JSON.stringify({
+                version: 1,
+                groupId: scope === 'group' ? String(targetId) : `private:${targetId}`,
+                digest,
+                at: new Date().toISOString(),
+                source: 'qq-chat',
+                path,
+            }, null, 2)}\n`, 'utf8');
+            await rename(markerTemporary, markerPath);
             return { sent: true, device, path };
         },
     }));

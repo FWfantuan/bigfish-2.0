@@ -19,6 +19,11 @@ the active session. When a latest screenshot exists, the QQ worker may call
 `read_image` on that path. It must not operate Android or launch a second game
 controller.
 
+QQ chat screenshots and gameplay-worker screenshots share
+`data/mumud/screenshot-share.json`. When the same image was already sent to the
+same group within three minutes, later question, observation, or final-result
+messages carry their text without repeating the image.
+
 `bigfish_stop_gameplay` is an owner-only control plane. It removes a pending
 gameplay request, asks `mumud` to cancel the play agent process tree, force-stops
 the active game package, and persists `autonomyPaused=true` in the shared state.

@@ -11,6 +11,9 @@ test("owner screenshot sharing is direct and remains owner-bound", async () => {
   assert.match(source, /当前群不在截图白名单/);
   assert.match(source, /client\.sendGroup/);
   assert.match(source, /client\.sendPrivate/);
+  assert.match(source, /screenshot-share\.json/);
+  assert.match(source, /createHash\('sha256'\)/);
+  assert.match(source, /source: 'qq-chat'/);
   assert.doesNotMatch(source, /request_confirmation|confirm\(|等待主人确认/);
 });
 
