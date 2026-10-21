@@ -8,6 +8,7 @@
   "gameAliases": {
     "明日方舟": "com.hypergryph.arknights",
     "明日方舟肉鸽": "com.hypergryph.arknights",
+    "黑流树海": "com.hypergryph.arknights",
     "界园肉鸽": "com.hypergryph.arknights",
     "萨卡兹肉鸽": "com.hypergryph.arknights",
     "萨米肉鸽": "com.hypergryph.arknights",
@@ -50,9 +51,7 @@
       "maxShares": 0,
       "maxQuestions": 4
     },
-    "safeTasks": {
-      "com.hypergryph.arknights": "arknights-safe"
-    },
+    "safeTasks": {},
     "hintTasks": [],
     "taskProfiles": {
       "arknights-roguelike-jiegarden": {
@@ -132,6 +131,8 @@
           "明日方舟肉鸽",
           "方舟肉鸽",
           "最新肉鸽",
+          "肉鸽",
+          "黑流树海",
           "集成战略",
           "萨卡兹肉鸽",
           "萨米肉鸽",
@@ -147,6 +148,25 @@
         "objective": "把这一局当成自己的冒险：自己选分队、开局干员、招募、遗物、路线和战斗摆放。静态选择先看清再点；战斗中由你决定干员、MAA 地图格子、朝向、技能和触发条件，再调用 arknights_maa_action，让 MAA 在 deployment_with_pause 下完成低层识别与点击。无法确认时停住并问主人，遇到值得记录的阶段可以分享截图。",
         "maxSessionMinutes": 45,
         "maxActions": 120,
+        "webSearch": true,
+        "observation": {
+          "enabled": true,
+          "firstDelayMs": 45000,
+          "intervalMs": 90000,
+          "timeoutMs": 45000,
+          "maxShares": 0,
+          "maxQuestions": 4
+        }
+      },
+      {
+        "id": "arknights-open",
+        "name": "明日方舟自由游玩",
+        "keywords": [
+          "明日方舟"
+        ],
+        "objective": "自己打开明日方舟，观察当前界面和账号状态，然后决定想打关卡、看剧情、整理干员还是玩其它已有内容。不要自动执行 MAA 日常或固定当前关卡；战斗需要操作时由你决定，并交给 MAA 单步动作工具完成低层点击。",
+        "maxSessionMinutes": 20,
+        "maxActions": 60,
         "webSearch": true,
         "observation": {
           "enabled": true,

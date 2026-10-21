@@ -2,9 +2,9 @@
 
 `services/mumud` watches the MuMu ADB device. After MuMu becomes available, BigFish can inspect the device and decide for itself whether and what to play. No game is prescribed when `targets` is empty and autonomous choice is enabled.
 
-Arknights has two deliberately separate paths. Ordinary safe battles may use
-the user-local MAA `arknights-safe` task. Roguelike requests use the isolated
-vision worker as the decision maker: BigFish chooses the squad, recruitment,
+Arknights no longer automatically dispatches a MAA daily task or follows the
+game's current/last stage. Generic and roguelike requests use the isolated
+vision worker as the decision maker: BigFish chooses what to play, the squad, recruitment,
 relics, route, deployment tiles, facing directions and skill plan. MAA's
 monolithic Roguelike tasks are not executable in this profile. During combat,
 the isolated worker calls `arknights_maa_action`; this creates a temporary MAA
@@ -18,6 +18,7 @@ MuMu ADB device online
   → inspect screenshot, UI tree and third-party app list
   → choose an installed game or decide not to play
   → launch the chosen package
+  → decide what content to play instead of following a fixed MAA daily task
   → continue the same reasoning session and play
   → write the choice, reason, actions and result to Brain
   → stop on success, uncertainty, or forbidden dialog

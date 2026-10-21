@@ -249,12 +249,20 @@ test("gameplay QQ summary uses the explicit persona line instead of the full rep
 test("agentic gameplay modes are selected from owner intent", () => {
   const config = {
     enabled: true,
-    modes: [{
-      id: "arknights-roguelike",
-      keywords: ["肉鸽", "集成战略"],
-    }],
+    modes: [
+      {
+        id: "arknights-roguelike",
+        keywords: ["肉鸽", "集成战略", "黑流树海"],
+      },
+      {
+        id: "arknights-open",
+        keywords: ["明日方舟"],
+      },
+    ],
   };
   assert.equal(resolveAgenticGameplayMode("帮我打最新的肉鸽", config)?.id, "arknights-roguelike");
+  assert.equal(resolveAgenticGameplayMode("帮我打黑流树海", config)?.id, "arknights-roguelike");
+  assert.equal(resolveAgenticGameplayMode("打开明日方舟随便看看", config)?.id, "arknights-open");
   assert.equal(resolveAgenticGameplayMode("随便打一把", config), null);
 });
 

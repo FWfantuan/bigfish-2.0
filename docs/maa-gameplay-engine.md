@@ -1,8 +1,9 @@
 # MAA gameplay engine
 
-BigFish uses the user's installed MAA as an optional external engine for one
-ordinary Arknights safe task. Roguelike strategy remains BigFish's own
-decision: the profile does not execute MAA's autonomous Roguelike tasks.
+BigFish uses the user's installed MAA as a low-level action engine. A MAA daily
+task is no longer selected automatically, so opening Arknights does not inherit
+the game's current/last stage. Roguelike strategy remains BigFish's own decision:
+the profile does not execute MAA's autonomous Roguelike tasks.
 
 The useful ideas adopted from MAA are:
 
@@ -48,8 +49,9 @@ powershell -ExecutionPolicy Bypass -File scripts/install-maa-cli.ps1
 
 ## Safe task boundary
 
-The only mapped game task is `arknights-safe` for
-`com.hypergryph.arknights`. It performs `StartUp` and one `Fight` with:
+The bounded `arknights-safe` task file remains available for explicit future
+use, but `safeTasks` is empty and the task is not selected by generic or
+roguelike play. It performs `StartUp` and one `Fight` with:
 
 - `medicine = 0`;
 - `stone = 0`;

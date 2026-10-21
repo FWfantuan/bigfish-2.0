@@ -269,10 +269,13 @@ export function buildGameplayPrompt({ target, device, packageName, goalId, agent
   const forbidden = Array.isArray(target.forbiddenActions)
     ? target.forbiddenActions
     : [];
+  const roguelikeMode = agenticMode?.id === "arknights-roguelike";
   const agenticRules = agenticMode
     ? `
 
-这局使用大肥鱼自主决策模式，MAA 的 Roguelike 任务不能替你选人、选遗物或路线，但 MAA 要作为你的手完成已经由你决定的低层动作：
+${roguelikeMode
+  ? "这局使用大肥鱼自主决策模式，MAA 的 Roguelike 任务不能替你选人、选遗物或路线，但 MAA 要作为你的手完成已经由你决定的低层动作："
+  : "这局由大肥鱼自由决定玩明日方舟里的什么内容，不自动执行 MAA 日常或固定当前关卡。MAA 只作为你的手完成已经由你决定的低层动作："}
 - 静态界面（选择分队、招募、遗物、路线、商店和事件）由你观察后自己决定并操作。
 - 战斗中由你决定干员名、MAA 地图格子 location、方向 direction、技能和触发条件，然后调用 arknights_maa_action。不要让 android_interact 猜干员卡、部署格或朝向。
 - arknights_maa_action 使用 deployment_with_pause=true，由 MAA 负责识别干员、暂停、点击格子和朝向。一次只做一小批有把握的决策，操作后再截图验证。
