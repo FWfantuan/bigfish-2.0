@@ -32,5 +32,7 @@ test("owner can answer paused gameplay questions but other users cannot", async 
   assert.match(source, /游戏选择只允许主人回答/);
   assert.match(source, /question\.active\.json/);
   assert.match(source, /question\.answer\.json/);
+  assert.match(source, /question\.groupId/);
+  assert.match(source, /这个问题等待另一个群回答/);
   assert.match(source, /owner decision/);
 });

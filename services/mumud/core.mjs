@@ -84,15 +84,32 @@ export function sessionGate(state, now, cooldownMinutes) {
     : { allowed: true, reason: "ready", remainingMs: 0 };
 }
 
-export function validateGameplayRequest(request, expectedGroup, now = Date.now()) {
+export function normalizeAllowedGroups(...values) {
+  const groups = new Set();
+  for (const value of values.flat(Infinity)) {
+    for (const part of String(value ?? "").split(/[,\s]+/)) {
+      const trimmed = part.trim();
+      if (trimmed) groups.add(trimmed);
+    }
+  }
+  return [...groups];
+}
+
+// Owner requests may come from any whitelisted group, not only the notify
+// group; the request's own groupId is what the reports are sent back to.
+export function validateGameplayRequest(request, allowedGroups, now = Date.now()) {
   if (!request || typeof request !== "object") return false;
   const requestedAt = Date.parse(request.requestedAt);
   const ageMs = now - requestedAt;
+  const groups = Array.isArray(allowedGroups)
+    ? allowedGroups.map((value) => String(value).trim()).filter(Boolean)
+    : normalizeAllowedGroups(allowedGroups);
+  if (groups.length === 0) return false;
   return Number.isFinite(requestedAt)
     && ageMs >= -60_000
     && ageMs <= 10 * 60_000
     && request.scope === "group"
-    && String(request.groupId) === String(expectedGroup)
+    && groups.includes(String(request.groupId))
     && request.isOwner === true;
 }
 
@@ -112,7 +129,7 @@ export function extractGameplayQqSummary(text) {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-  return (fallback || "我这会儿有点乱，刚停下还没想好怎么讲，等下我慢慢说。").slice(0, 500);
+  return fallback.slice(0, 500);
 }
 
 export function resolveAgenticGameplayMode(hint, config = {}) {

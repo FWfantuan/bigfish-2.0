@@ -142,24 +142,6 @@ export function summarizeMaaOutput(stdout = "", stderr = "") {
   };
 }
 
-export function buildMaaQqSummary({ game = "明日方舟", result, taskProfile = {} } = {}) {
-  if (!result?.ok) {
-    const reason = String(result?.error || "MAA 没跑起来").replace(/\s+/g, " ").trim();
-    return `我本来想用 MAA 帮我打会儿${game}，结果它那边没接上。${reason.slice(0, 160)}。这次我没盲点，等回头再弄。`;
-  }
-  if (taskProfile.domain === "arknights_roguelike" && result.meaningful === false) {
-    return `我想开一局${taskProfile.theme || ""}肉鸽实训，但账号正在玩别的主题，我没硬切，也没乱花资源。这次不算训练局。`;
-  }
-  if (taskProfile.domain === "arknights_roguelike") {
-    return "这局肉鸽实训跑完了，路线、战斗和资源记录我都收好准备复盘。没买源石，也没投资源石锭。";
-  }
-  const taskCount = Number(result.completedTasks || 0);
-  const action = taskCount > 0
-    ? `MAA 把 ${taskCount} 段流程跑完了`
-    : "MAA 这轮正常收尾了";
-  return `这局我让 MAA 接管了，${action}。没动药也没动石头，我这边聊天也没装死，打完整理完就回来了。`;
-}
-
 export function resolveMaaPaths(config = {}, env = process.env) {
   const configuredRoot = config.root || env.MAA_ROOT || env.MAA_DATA_DIR;
   const root = configuredRoot

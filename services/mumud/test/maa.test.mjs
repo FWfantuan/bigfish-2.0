@@ -6,7 +6,6 @@ import test from "node:test";
 import {
   buildMaaArgs,
   buildMaaLearningRecord,
-  buildMaaQqSummary,
   extractRoguelikeEvidence,
   isSupportedMaaResolution,
   MaaRunner,
@@ -86,15 +85,6 @@ test("MAA callback output is reduced to completed task chains and errors", () =>
   assert.match(summary.errors[0], /Task failed/);
 });
 
-test("MAA QQ summary stays in BigFish's short casual voice", () => {
-  const summary = buildMaaQqSummary({
-    result: { ok: true, completedTasks: 2 },
-  });
-  assert.match(summary, /MAA/);
-  assert.match(summary, /没动药也没动石头/);
-  assert.ok(summary.length < 160);
-});
-
 test("Roguelike log evidence and learning records stay structured", () => {
   const output = [
     "[INF] Roguelike theme Sarkaz difficulty 8",
@@ -139,10 +129,6 @@ test("Roguelike log evidence and learning records stay structured", () => {
     },
   });
   assert.equal(started.meaningful, true);
-  assert.match(buildMaaQqSummary({
-    result: { ok: true, meaningful: false },
-    taskProfile: { domain: "arknights_roguelike", theme: "Sarkaz" },
-  }), /正在玩别的主题/);
 });
 
 test("missing MAA installation fails its preflight instead of pretending to play", async () => {

@@ -23,10 +23,10 @@ import {
   resolveConfiguredGame,
   sessionGate,
   validateGameplayRequest,
+  normalizeAllowedGroups,
 } from "./core.mjs";
 import {
   buildMaaLearningRecord,
-  buildMaaQqSummary,
   isSupportedMaaResolution,
   MaaRunner,
   parseAndroidDisplaySize,
@@ -52,9 +52,15 @@ if (state.running) {
 const adb = process.env.ADB || "adb";
 const manager = process.env.MUMU_MANAGER || "D:\\MuMuPlayer\\nx_main\\MuMuManager.exe";
 const notifyGroup = process.env[gameConfig.notifyGroupEnv] || chatConfig.groups[0];
+const allowedGroups = normalizeAllowedGroups(
+  process.env.BIGFISH_ALLOWED_GROUPS,
+  chatConfig.groups,
+  notifyGroup,
+);
 const brain = new BrainClient();
 const playDsh = new DshDecisionMaker({ profile: "bigfish-play", timeoutMs: 900000 });
 const gameObserverDsh = new DshDecisionMaker({ profile: "bigfish-play", timeoutMs: 45000 });
+const messageDsh = new DshDecisionMaker({ profile: "bigfish-social", timeoutMs: 60000 });
 const explicitTarget = gameConfig.targets?.[0];
 const autonomy = gameConfig.autonomy || { enabled: false };
 const agenticGameplay = gameConfig.agenticGameplay || { enabled: false, modes: [] };
@@ -125,10 +131,11 @@ async function poll() {
   if (stopping || polling || !gameConfig.enabled || (!explicitTarget && !autonomy.enabled)) return;
   polling = true;
   let device = "";
+  let activeGroupId = notifyGroup;
   try {
     device = (await listDevices())[0];
     if (!device) {
-      const ownerRequestWaiting = await hasFreshGameplayRequest(notifyGroup);
+      const ownerRequestWaiting = await hasFreshGameplayRequest(allowedGroups);
       let info = await managerInfo();
       if (!info?.is_android_started && (gameConfig.autoLaunchEmulator || ownerRequestWaiting)) {
         await run(manager, ["control", "-v", "0", "launch"]).catch(() => "");
@@ -147,12 +154,13 @@ async function poll() {
       return;
     }
     const now = Date.now();
-    const ownerRequest = await consumeGameplayRequest(notifyGroup);
+    const ownerRequest = await consumeGameplayRequest(allowedGroups);
     if (ownerRequest) {
+      activeGroupId = String(ownerRequest.groupId);
       state.lastSessionAt = 0;
       runtimeStatus.lastRequest = ownerRequest;
       await saveStatus();
-      await brain.observe(brainScope(), "owner_game_request", ownerRequest, true).catch(() => null);
+      await brain.observe(brainScope(activeGroupId), "owner_game_request", ownerRequest, true).catch(() => null);
       log(`owner gameplay request: ${ownerRequest.game || "self-selected"}`);
     }
     const gate = ownerRequest ? { allowed: true, reason: "owner-request", remainingMs: 0 }
@@ -169,7 +177,15 @@ async function poll() {
         if ((state.lastMissingAt || 0) + gameConfig.missingGameReminderMinutes * 60000 <= now) {
           state.lastMissingAt = now;
           await saveState();
-          await notify(`MuMu 在线了，但设备里没找到“${explicitTarget.name}”，主人先装一下吧。`);
+          await sendModeledGameplayMessage({
+            event: "主人指定的游戏没有安装，当前无法开局",
+            facts: {
+              game: explicitTarget.name,
+              packageQuery: explicitTarget.packageQuery,
+              device: state.lastDevice,
+            },
+            groupId: ownerRequest?.groupId || notifyGroup,
+          });
           log(`target package not installed: ${explicitTarget.packageQuery}`);
         }
         return;
@@ -190,13 +206,22 @@ async function poll() {
     log(`poll failed: ${error.message}`);
     if (state.running) {
       if (device) {
+        const errorSummary = await composeGameplayMessage({
+          event: "游戏中途发生错误，这一局已经停止",
+          facts: { error: error.message.slice(0, 500) },
+          groupId: activeGroupId,
+        }).catch(() => "");
         await sendGameplayFinalReport({
           device,
-          groupId: notifyGroup,
-          text: `这局中途卡住了：${error.message.slice(0, 500)}`,
+          groupId: activeGroupId,
+          text: errorSummary,
         }).catch(() => {});
       } else {
-        await notify(`这局中途卡住了，MuMu 当前不在线：${error.message.slice(0, 500)}`).catch(() => {});
+        await sendModeledGameplayMessage({
+          event: "游戏中途发生错误，而且 MuMu 当前不在线",
+          facts: { error: error.message.slice(0, 500) },
+          groupId: activeGroupId,
+        }).catch(() => {});
       }
     }
   } finally {
@@ -207,7 +232,7 @@ async function poll() {
 }
 
 async function chooseAndPlay(device, now, ownerRequest = null) {
-  const scope = brainScope();
+  const scope = brainScope(ownerRequest?.groupId || notifyGroup);
   const thirdPartyPackages = await adbRun(device, ["shell", "pm", "list", "packages", "-3"])
     .then(parsePackages);
   state.lastDecisionAt = now;
@@ -216,7 +241,13 @@ async function chooseAndPlay(device, now, ownerRequest = null) {
   if (thirdPartyPackages.length === 0) {
     await brain.action(scope, "autonomous_game_skip", {}, "设备里没有第三方应用可玩", true)
       .catch(() => null);
-    if (autonomy.notifyOnSkip) await notify("MuMu 里没有能玩的第三方游戏，这次先算了。");
+    if (autonomy.notifyOnSkip) {
+      await sendModeledGameplayMessage({
+        event: "设备里没有能明确识别为游戏的第三方应用",
+        facts: { installedPackages: thirdPartyPackages },
+        groupId: ownerRequest?.groupId || notifyGroup,
+      });
+    }
     return;
   }
 
@@ -266,7 +297,17 @@ async function chooseAndPlay(device, now, ownerRequest = null) {
 
   if (choice.action !== "play") {
     log(`autonomous game choice skipped: ${choice.reason}`);
-    if (autonomy.notifyOnSkip) await notify(`我看了一圈，这次先不玩：${choice.reason}`);
+    if (autonomy.notifyOnSkip) {
+      await sendModeledGameplayMessage({
+        event: "大肥鱼看过设备后决定这次不玩",
+        facts: {
+          reason: choice.reason,
+          mood: choice.innerState?.mood,
+          focus: choice.innerState?.focus,
+        },
+        groupId: ownerRequest?.groupId || notifyGroup,
+      });
+    }
     return;
   }
   if (choice.innerState) {
@@ -293,7 +334,18 @@ async function chooseAndPlay(device, now, ownerRequest = null) {
   await saveStatus();
   state.running = true;
   await saveState();
-  await notify(`我刚刚突然想玩“${target.name}”，自己开了：${choice.reason}`);
+  await sendModeledGameplayMessage({
+    event: "大肥鱼突然想玩一个游戏，已经自己打开",
+    facts: {
+      game: target.name,
+      packageName: choice.packageName,
+      reason: choice.reason,
+      mood: choice.innerState?.mood,
+      focus: choice.innerState?.focus,
+      desire: choice.innerState?.desire,
+    },
+    groupId: ownerRequest?.groupId || notifyGroup,
+  });
   await playChosenGame({
     device,
     packageName: choice.packageName,
@@ -314,7 +366,7 @@ async function playChosenGame({
 }) {
   await adbRun(device, ["shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"]);
   await delay(5000);
-  const scope = brainScope();
+  const scope = brainScope(ownerRequest?.groupId || notifyGroup);
   const goal = await brain.goal(
     scope,
     `自主玩 ${target.name}`,
@@ -383,7 +435,14 @@ async function playChosenGame({
   } finally {
     await Promise.all([stopObserver(), stopQuestionBridge()]);
   }
-  const summary = String(result.raw || "这局没有产生可读结果").trim().slice(0, 3000);
+  const summary = String(result.raw || "").trim().slice(0, 3000);
+  const qqSummary = summary.includes("QQ_SUMMARY:")
+    ? extractGameplayQqSummary(summary)
+    : await composeGameplayMessage({
+        event: "大肥鱼的一局自主游戏已经结束",
+        facts: { summary },
+        groupId: finalGroupId,
+      }).catch(() => "");
   await brain.action(scope, "autonomous_game_session", {
     game: target.name,
     packageName,
@@ -397,14 +456,14 @@ async function playChosenGame({
     game: target.name,
     packageName,
     summary,
-    qqSummary: extractGameplayQqSummary(summary),
+    qqSummary,
     completedAt: new Date().toISOString(),
   };
   await saveStatus();
   await sendGameplayFinalReport({
     device,
     groupId: finalGroupId,
-    text: extractGameplayQqSummary(summary),
+    text: qqSummary,
   });
 }
 
@@ -417,7 +476,7 @@ async function playWithMaa({
   selectionReason,
   ownerRequest = null,
 }) {
-  const scope = brainScope();
+  const scope = brainScope(ownerRequest?.groupId || notifyGroup);
   const allowlist = maaConfig.taskAllowlist || [];
   if (!allowlist.includes(task)) {
     const error = `MAA task ${task} is not in the configured allowlist`;
@@ -450,7 +509,11 @@ async function playWithMaa({
       return { handled: false, error };
     }
     const result = { ok: false, phase: "preflight", error };
-    const qqSummary = buildMaaQqSummary({ game: target.name, result });
+    const qqSummary = await composeGameplayMessage({
+      event: "MAA 没有正常启动，这局没有进入游戏",
+      facts: { game: target.name, phase: "preflight", error },
+      groupId: ownerRequest?.groupId || notifyGroup,
+    }).catch(() => "");
     runtimeStatus.currentTarget = null;
     runtimeStatus.lastSession = {
       engine: "maa",
@@ -491,7 +554,11 @@ async function playWithMaa({
       return { handled: false, error };
     }
     const result = { ok: false, phase: "preflight", error };
-    const qqSummary = buildMaaQqSummary({ game: target.name, result });
+    const qqSummary = await composeGameplayMessage({
+      event: "当前分辨率不支持 MAA，这局没有继续",
+      facts: { game: target.name, display, error },
+      groupId: ownerRequest?.groupId || notifyGroup,
+    }).catch(() => "");
     runtimeStatus.currentTarget = null;
     runtimeStatus.lastSession = {
       engine: "maa",
@@ -564,11 +631,23 @@ async function playWithMaa({
     learningRecord,
   }, factualSummary, learningRecord.meaningful !== false).catch(() => null);
 
-  const qqSummary = buildMaaQqSummary({
-    game: target.name,
-    result: learningRecord,
-    taskProfile,
-  });
+  const qqSummary = await composeGameplayMessage({
+    event: result.ok
+      ? "这局 MAA 安全任务已经结束"
+      : "这局 MAA 任务失败了",
+    facts: {
+      game: target.name,
+      task,
+      ok: result.ok,
+      completedTasks: result.completedTasks || 0,
+      battles: result.battles || [],
+      errors: result.errors || [],
+      error: result.error || null,
+      meaningful: learningRecord.meaningful,
+      theme: learningRecord.theme,
+    },
+    groupId: ownerRequest?.groupId || notifyGroup,
+  }).catch(() => "");
   runtimeStatus.currentTarget = null;
   runtimeStatus.lastSession = {
     engine: "maa",
@@ -593,8 +672,68 @@ async function playWithMaa({
   return { handled: true, result };
 }
 
-function brainScope() {
-  return `group:${notifyGroup}`;
+function brainScope(groupId = notifyGroup) {
+  return `group:${groupId}`;
+}
+
+async function composeGameplayMessage({
+  event,
+  facts = {},
+  groupId = notifyGroup,
+}) {
+  const context = await brain.context(brainScope(groupId)).catch(() => null);
+  const memory = JSON.stringify({
+    self: context?.self || null,
+    recentConversation: (context?.recentActions || [])
+      .filter((item) => item.kind === "qq_agent_turn")
+      .slice(0, 4)
+      .map((item) => ({
+        user: item?.payload?.userMessage,
+        assistant: item?.result,
+      })),
+  }).slice(0, 10000);
+  const prompt = `你是大肥鱼，正在 QQ 群里说话。请只根据下面的事实，用你自己的口吻写一条自然的中文游戏播报。
+
+要求：
+- 1～3 句，像熟人随口说话，可以有一点害羞、吐槽、开心或犹豫。
+- 不要客服腔、固定开场、固定收尾、标题、列表、Markdown 或“任务已派发”一类状态汇报。
+- 不要编造事实，不要声称做了没有发生的事。
+- 只输出准备发到群里的正文，不要解释创作过程。
+
+最近状态与对话：
+${memory}
+
+本次事件：
+${String(event || "").slice(0, 500)}
+
+事实：
+${JSON.stringify(facts).slice(0, 8000)}`;
+  const result = await messageDsh.decide({ prompt, timeoutMs: 60000 });
+  const text = String(result.raw || "")
+    .trim()
+    .replace(/^```(?:text|markdown)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+  if (!text) throw new Error("message model returned no text");
+  return text.slice(0, 500);
+}
+
+async function sendModeledGameplayMessage({
+  event,
+  facts = {},
+  groupId = notifyGroup,
+}) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const text = await composeGameplayMessage({ event, facts, groupId });
+      await notify(text, groupId);
+      return text;
+    } catch (error) {
+      log(`gameplay message model failed (${attempt}/2): ${error.message}`);
+      if (attempt < 2) await delay(400);
+    }
+  }
+  return "";
 }
 
 async function publishRuntimeCapabilities() {
@@ -651,7 +790,7 @@ async function saveStatus() {
   await rename(tmp, statusPath);
 }
 
-async function consumeGameplayRequest(expectedGroup) {
+async function consumeGameplayRequest(groups = allowedGroups) {
   const claimPath = `${requestPath}.claim-${Date.now()}`;
   try {
     await rename(requestPath, claimPath);
@@ -662,7 +801,7 @@ async function consumeGameplayRequest(expectedGroup) {
   }
   try {
     const request = JSON.parse(await readFile(claimPath, "utf8"));
-    if (!validateGameplayRequest(request, expectedGroup)) {
+    if (!validateGameplayRequest(request, groups)) {
       log("discarded invalid or stale gameplay request");
       return null;
     }
@@ -675,10 +814,10 @@ async function consumeGameplayRequest(expectedGroup) {
   }
 }
 
-async function hasFreshGameplayRequest(expectedGroup) {
+async function hasFreshGameplayRequest(groups = allowedGroups) {
   try {
     const request = JSON.parse(await readFile(requestPath, "utf8"));
-    return validateGameplayRequest(request, expectedGroup);
+    return validateGameplayRequest(request, groups);
   } catch {
     return false;
   }
@@ -714,30 +853,27 @@ function startGameplayQuestionBridge({
     const id = String(request.id || "").trim();
     const question = String(request.question || "").trim().slice(0, 1200);
     if (!id || !question) return;
-    try {
-      await rename(questionRequestPath, questionActivePath);
-    } catch (error) {
-      if (error.code === "ENOENT") return;
-      throw error;
-    }
+    const active = {
+      ...request,
+      groupId: String(groupId),
+      notifiedAt: new Date().toISOString(),
+    };
+    const activeTemporary = `${questionActivePath}.${id}.tmp`;
+    await writeFile(activeTemporary, JSON.stringify(active, null, 2), "utf8");
+    await rename(activeTemporary, questionActivePath);
+    await unlink(questionRequestPath).catch(() => null);
     const screenshot = await captureGameplayScreenshot(device);
     const options = Array.isArray(request.options)
       ? request.options.map((item) => String(item).trim()).filter(Boolean).slice(0, 8)
       : [];
     const recommendation = String(request.recommendation || "").trim().slice(0, 300);
-    const message = [
-      question,
-      options.length ? `我看到的选项：${options.join(" / ")}` : "",
-      recommendation ? `我倾向：${recommendation}` : "",
-      "你直接说选哪个就行，我停在这里等你。",
-    ].filter(Boolean).join("\n");
     await sendGameplayImage({
       screenshot,
-      caption: message,
+      caption: question,
       mentionOwner: true,
       groupId,
     });
-    await brain.action(brainScope(), "gameplay_question", {
+    await brain.action(brainScope(groupId), "gameplay_question", {
       questionId: id,
       game: request.game || null,
       options,
@@ -778,14 +914,18 @@ async function sendGameplayFinalReport({
     const screenshot = await captureGameplayScreenshot(device);
     await sendGameplayImage({
       screenshot,
-      caption: caption || "这局先停在这里，给你看一眼现在的画面。",
+      caption,
       groupId,
     });
   } catch (error) {
-    await notify(
-      `${caption || "这局先停在这里。"}\n当前截图没发出来：${error.message.slice(0, 300)}`,
+    await sendModeledGameplayMessage({
+      event: "游戏汇报时当前截图没有成功发出来",
+      facts: {
+        existingSummary: caption,
+        error: error.message.slice(0, 300),
+      },
       groupId,
-    );
+    }).catch(() => null);
   }
 }
 
@@ -848,27 +988,29 @@ function startGameplayObserver({
     const observation = normalizeGameplayObservation(decision.decision);
     if (observation.action === "none") return;
     if (observation.action === "share" && shares < maxShares) {
+      if (!observation.text) return;
       const screenshot = await captureGameplayScreenshot(device);
       if (sharedDigests.has(screenshot.digest)) return;
       sharedDigests.add(screenshot.digest);
       await sendGameplayImage({
         screenshot,
-        caption: observation.text || "这波有点意思 给你看一眼",
+        caption: observation.text,
         groupId,
       });
       shares += 1;
     }
     if (observation.action === "ask" && questions < maxQuestions) {
+      if (!observation.text) return;
       const screenshot = await captureGameplayScreenshot(device);
       await sendGameplayImage({
         screenshot,
-        caption: observation.text || "这里我拿不准 你看一下该怎么选",
+        caption: observation.text,
         mentionOwner: true,
         groupId,
       });
       questions += 1;
     }
-    await brain.action(brainScope(), "gameplay_observation", {
+    await brain.action(brainScope(groupId), "gameplay_observation", {
       engine: "bigfish-play",
       game,
       action: observation.action,
@@ -923,8 +1065,12 @@ async function sendGameplayImage({
   }
   message.push(
     { type: "image", data: { file: `base64://${screenshot.bytes.toString("base64")}` } },
-    { type: "text", data: { text: `\n${caption}` } },
   );
+  if (String(caption || "").trim()) {
+    message.push(
+      { type: "text", data: { text: `\n${String(caption).trim()}` } },
+    );
+  }
   await connection.action("send_group_msg", {
     group_id: Number(groupId),
     message,

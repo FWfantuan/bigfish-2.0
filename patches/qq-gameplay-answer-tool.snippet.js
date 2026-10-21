@@ -66,6 +66,8 @@ function registerBigFishGameplayAnswerTool(ctx, cfg, officialMode) {
             const questionId = String(question.id || '');
             if (!questionId)
                 throw new Error('等待中的问题缺少编号');
+            if (String(question.groupId || '') !== String(targetId))
+                throw new Error('这个问题等待另一个群回答');
             if (args.questionId?.trim() && args.questionId.trim() !== questionId)
                 throw new Error('回答对应的问题已经过期');
             const answer = String(args.answer || '').trim();

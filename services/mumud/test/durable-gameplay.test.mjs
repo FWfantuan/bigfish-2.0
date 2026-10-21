@@ -12,7 +12,14 @@ test("gameplay final reports and strategic questions are wired to screenshots", 
   assert.match(main, /startGameplayQuestionBridge/);
   assert.match(main, /question\.request\.json/);
   assert.match(main, /question\.answer\.json/);
+  assert.match(main, /groupId: String\(groupId\)/);
   assert.match(main, /captureGameplayScreenshot\(device\)/);
+  assert.match(main, /brainScope\(ownerRequest\?\.groupId \|\| notifyGroup\)/);
+  assert.match(main, /activeGroupId = String\(ownerRequest\.groupId\)/);
+  assert.match(main, /composeGameplayMessage/);
+  assert.match(main, /profile: "bigfish-social"/);
+  assert.doesNotMatch(main, /我刚刚突然想玩/);
+  assert.doesNotMatch(main, /buildMaaQqSummary/);
   assert.match(tools, /arknights_ask_owner/);
   assert.match(tools, /opening squad\/operators/);
 });

@@ -7,6 +7,7 @@ import {
   extractGameplayQqSummary,
   findTargetPackage,
   normalizeGameChoice,
+  normalizeAllowedGroups,
   normalizeGameplayObservation,
   parseInstalledPackages,
   parseOnlineDevices,
@@ -142,6 +143,21 @@ test("owner gameplay requests are short-lived, group-bound and owner-only", () =
   assert.equal(validateGameplayRequest({ ...request, groupId: "1" }, "805070822", now), false);
   assert.equal(validateGameplayRequest({ ...request, isOwner: false }, "805070822", now), false);
   assert.equal(validateGameplayRequest({ ...request, requestedAt: "2026-10-21T11:49:00Z" }, "805070822", now), false);
+});
+
+test("owner requests are accepted from any whitelisted group", () => {
+  const now = Date.parse("2026-10-21T12:00:00Z");
+  const request = {
+    requestedAt: "2026-10-21T11:59:00Z",
+    scope: "group",
+    groupId: "1107268998",
+    isOwner: true,
+  };
+  const groups = normalizeAllowedGroups("805070822, 1107268998", ["298120434"]);
+  assert.deepEqual(groups, ["805070822", "1107268998", "298120434"]);
+  assert.equal(validateGameplayRequest(request, groups, now), true);
+  assert.equal(validateGameplayRequest({ ...request, groupId: "999" }, groups, now), false);
+  assert.equal(validateGameplayRequest(request, [], now), false);
 });
 
 test("owner request is included in the autonomous game choice prompt", () => {
