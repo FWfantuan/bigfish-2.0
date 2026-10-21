@@ -69,7 +69,7 @@ cpu_ocr = true
 
 [instance_options]
 touch_mode = "MaaTouch"
-deployment_with_pause = true
+deployment_with_pause = false
 adb_lite_enabled = false
 kill_adb_on_exit = false
 `;
@@ -119,7 +119,8 @@ export function createBigFishArknightsTools() {
       "Let the user's MAA Core execute one low-level Arknights battle action while BigFish decides "
       + "the operator, tile, direction, skill timing and conditions. Supports Deploy, Skill, Retreat, "
       + "SpeedUp, BulletTime, SkillUsage and SetUnitLocation. MAA profiles run with "
-      + "deployment_with_pause=true. Use lane coordinates from MAA/map.ark-nights coordinates and the "
+      + "deployment_with_pause=false. Resume a paused battle before deploying, then verify placement "
+      + "from a fresh screenshot. Use lane coordinates from MAA/map.ark-nights coordinates and the "
       + "current stage name. Do not ask MAA to choose strategy or use SkillDaemon.",
     parameters: {
       serial: {
@@ -169,7 +170,7 @@ export function createBigFishArknightsTools() {
           serial: { type: "string", required: true },
           stageName: { type: "string", required: true },
           actionType: { type: "string", required: true },
-          deploymentWithPause: { type: "boolean", required: true, const: true },
+          deploymentWithPause: { type: "boolean", required: true, const: false },
           logPath: { type: "string", required: true },
           outputTail: { type: "string", required: true },
         },
@@ -238,7 +239,7 @@ export function createBigFishArknightsTools() {
           serial,
           stageName: String(task.tasks[0].params.details.stage_name),
           actionType,
-          deploymentWithPause: true,
+          deploymentWithPause: false,
           logPath,
           outputTail: `${result.stdout}\n${result.stderr}\n${logTail}`.trim().slice(-16_000),
         };

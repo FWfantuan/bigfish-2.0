@@ -9,7 +9,8 @@ relics, route, deployment tiles, facing directions and skill plan. MAA's
 monolithic Roguelike tasks are not executable in this profile. During combat,
 the isolated worker calls `arknights_maa_action`; this creates a temporary MAA
 `SingleStep` task, uses MAA's tile mapping and recognition, and runs it with
-`deployment_with_pause=true`. See
+`deployment_with_pause=false`. The worker resumes a paused battle before
+deployment and verifies the operator placement from the next screenshot. See
 [MAA gameplay engine](maa-gameplay-engine.md).
 
 ```text

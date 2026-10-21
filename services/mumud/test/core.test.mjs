@@ -209,7 +209,7 @@ test("gameplay prompt carries action limits, vision failure handling and safety 
   assert.match(prompt, /QQ_SUMMARY/);
 });
 
-test("agentic roguelike prompt makes BigFish decide while paused", () => {
+test("agentic roguelike prompt resumes paused battles before deployment", () => {
   const prompt = buildGameplayPrompt({
     target: {
       name: "明日方舟",
@@ -222,7 +222,9 @@ test("agentic roguelike prompt makes BigFish decide while paused", () => {
     agenticMode: { id: "arknights-roguelike" },
   });
   assert.match(prompt, /MAA 要作为你的手/);
-  assert.match(prompt, /deployment_with_pause=true/);
+  assert.match(prompt, /deployment_with_pause=false/);
+  assert.match(prompt, /PAUSE 状态下不能部署/);
+  assert.match(prompt, /截图确认干员真的落地/);
   assert.match(prompt, /arknights_maa_action/);
   assert.match(prompt, /禁止 SkillDaemon/);
   assert.match(prompt, /自己决定并操作/);

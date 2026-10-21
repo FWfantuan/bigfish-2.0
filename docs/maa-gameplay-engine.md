@@ -62,16 +62,18 @@ roguelike play. It performs `StartUp` and one `Fight` with:
 When the owner asks for Integrated Strategies, `mumud` resolves the request to
 the `arknights-roguelike` agentic gameplay mode and calls the isolated visual
 worker without dispatching a MAA Roguelike task. BigFish makes the squad,
-recruitment, relic, route and battle decisions. It pauses combat before a
-deployment decision, observes and acts in small verified steps, then briefly
-resumes only to observe DP or enemy movement.
+recruitment, relic, route and battle decisions. It observes and acts in small
+verified steps. Arknights does not accept operator deployment while the manual
+pause overlay is open, so the worker resumes combat first and verifies the
+operator is actually on the field after each MAA deployment.
 
 Inside combat the worker calls `arknights_maa_action`. This tool validates one
 Copilot action selected by BigFish, writes it into a temporary MAA `SingleStep`
 task, and runs MAA Core with a generated `bigfish-actions` profile whose
-`deployment_with_pause` option is enabled. MAA therefore performs the reliable
-operator recognition, tile mapping and touch sequence while BigFish still owns
-the operator name, logical tile, direction, skill timing and conditions.
+`deployment_with_pause` option is disabled. MAA therefore performs the reliable
+operator recognition, tile mapping and touch sequence on a running battle while
+BigFish still owns the operator name, logical tile, direction, skill timing and
+conditions.
 
 `SkillDaemon` is deliberately blocked. An action may be `Deploy`, `Skill`,
 `Retreat`, `SpeedUp`, `BulletTime`, `SkillUsage` or `SetUnitLocation`; static
