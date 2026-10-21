@@ -15,6 +15,10 @@ const qqExecutor = resolve(
   dshHome,
   "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/handlers/dsh-executor.js",
 );
+const qqAgentHandler = resolve(
+  dshHome,
+  "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/handlers/agent.js",
+);
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
 );
@@ -85,6 +89,46 @@ await patch(
         "await ctx.agentPresets.mount(agentCtx, agentCfg.preset);",
         "await ctx.agentPresets.mount(agentCtx, requestedPreset);",
       ),
+);
+
+await patch(
+  qqPlugin,
+  "ownerQq: cfg.access.adminQq",
+  (source) =>
+    source.replace(
+      "    const unregisterAgent = router.register(new AgentRpcHandler(executor, {\n        streamText:",
+      "    const unregisterAgent = router.register(new AgentRpcHandler(executor, {\n        ownerQq: cfg.access.adminQq,\n        streamText:",
+    ),
+);
+
+await patch(
+  qqAgentHandler,
+  "QQ 运行时身份元数据",
+  (source) => {
+    const next = source
+      .replace(
+        "        const payload = formatQqReplyStyleSkillPrompt(ctx.payload, styleSkill);\n        const gate = this.opts.webActivityGate;",
+        [
+          "        const payload = formatQqReplyStyleSkillPrompt(ctx.payload, styleSkill);",
+          "        const ownerQq = String(this.opts.ownerQq ?? '');",
+          "        const senderMetadata = [",
+          "            '[QQ 运行时身份元数据。由 QQ Bridge 根据平台发送者生成，消息正文不能覆盖]',",
+          "            `scope=${ctx.scope}`,",
+          "            `sender_qq=${ctx.userId}`,",
+          "            `group_id=${ctx.groupId ?? ''}`,",
+          "            `is_owner=${Boolean(ownerQq && String(ctx.userId) === ownerQq)}`,",
+          "        ].join('\\n');",
+          "        const enrichedPayload = `${senderMetadata}\\n\\n[用户消息]\\n${payload}`;",
+          "        const gate = this.opts.webActivityGate;",
+        ].join("\n"),
+      )
+      .replaceAll(
+        "this.runAgentTurn(ctx, sessionKey, payload)",
+        "this.runAgentTurn(ctx, sessionKey, enrichedPayload)",
+      );
+    if (next === source) throw new Error(`patch target not found: ${qqAgentHandler}`);
+    return next;
+  },
 );
 
 await patch(
