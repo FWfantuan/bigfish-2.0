@@ -1,6 +1,21 @@
 const ACTIONS = new Set(["wait", "group_message", "request_tool"]);
 const TOOL_DOMAINS = new Set(["bilibili", "browser", "computer", "android", "general"]);
 
+export function isDirectBotMention(message, botQQ) {
+  const bot = String(botQQ || "").trim();
+  if (!bot) return false;
+  const raw = message?.raw && typeof message.raw === "object" ? message.raw : message;
+  const segments = Array.isArray(raw?.message) ? raw.message : [];
+  return segments.some(
+    (part) => part?.type === "at" && String(part?.data?.qq || "") === bot,
+  ) || String(raw?.raw_message || "").includes(`[CQ:at,qq=${bot}]`);
+}
+
+export function proactiveMessages(messages, botQQ) {
+  return (Array.isArray(messages) ? messages : [])
+    .filter((message) => !isDirectBotMention(message, botQQ));
+}
+
 export function normalizeDecision(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const action = ACTIONS.has(value.action) ? value.action : "wait";

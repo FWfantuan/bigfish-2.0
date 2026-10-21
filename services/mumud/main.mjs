@@ -44,10 +44,21 @@ const questionRequestPath = resolve("data/mumud/question.request.json");
 const questionActivePath = resolve("data/mumud/question.active.json");
 const questionAnswerPath = resolve("data/mumud/question.answer.json");
 const state = await loadState(statePath);
-if (state.running) {
+const interruptedSession = state.running || state.activeSession
+  ? {
+      groupId: String(state.activeGroupId || state.activeSession?.groupId || ""),
+      activeSession: state.activeSession || null,
+      lastSessionAt: Number(state.lastSessionAt || 0),
+      interruptedAt: new Date().toISOString(),
+    }
+  : null;
+if (interruptedSession) {
   state.running = false;
+  state.activeGroupId = "";
+  state.activeSession = null;
+  state.interruptedSession = interruptedSession;
   await saveState();
-  log("recovered an interrupted game session marker");
+  log(`recovered interrupted gameplay marker for group=${interruptedSession.groupId || "unknown"}`);
 }
 const adb = process.env.ADB || "adb";
 const manager = process.env.MUMU_MANAGER || "D:\\MuMuPlayer\\nx_main\\MuMuManager.exe";
@@ -108,12 +119,18 @@ const runtimeStatus = {
 let connection;
 let polling = false;
 let stopping = false;
+let interruptedSessionReported = false;
 
 connection = new OneBotConnection({
   url: chatConfig.onebot.url,
   token: process.env[chatConfig.onebot.tokenEnv] || "",
   onStatus(status) {
     log(`OneBot ${status.kind}${status.message ? `: ${status.message}` : ""}`);
+    if (status.kind === "connected" && interruptedSession && !interruptedSessionReported) {
+      interruptedSessionReported = true;
+      void reportInterruptedGameplay(interruptedSession)
+        .catch((error) => log(`interrupted gameplay report failed: ${error.message}`));
+    }
   },
   onMessage() {},
 });
@@ -191,9 +208,13 @@ async function poll() {
         }
         return;
       }
-      state.running = true;
       state.lastSessionAt = now;
-      await saveState();
+      await beginActiveSession({
+        groupId: ownerRequest?.groupId || notifyGroup,
+        packageName,
+        target: explicitTarget,
+        engine: "bigfish-play",
+      });
       await playChosenGame({
         device,
         packageName,
@@ -227,6 +248,9 @@ async function poll() {
     }
   } finally {
     state.running = false;
+    state.activeGroupId = "";
+    state.activeSession = null;
+    state.interruptedSession = null;
     await saveState();
     polling = false;
   }
@@ -266,8 +290,12 @@ async function chooseAndPlay(device, now, ownerRequest = null) {
     state.lastDecisionAt = now;
     runtimeStatus.currentTarget = { name: target.name, packageName: configured.packageName };
     await saveStatus();
-    state.running = true;
-    await saveState();
+    await beginActiveSession({
+      groupId: ownerRequest?.groupId || notifyGroup,
+      packageName: configured.packageName,
+      target,
+      engine: "bigfish-play",
+    });
     await playChosenGame({
       device,
       packageName: configured.packageName,
@@ -333,8 +361,12 @@ async function chooseAndPlay(device, now, ownerRequest = null) {
   state.lastDecisionAt = now;
   runtimeStatus.currentTarget = { name: target.name, packageName: choice.packageName };
   await saveStatus();
-  state.running = true;
-  await saveState();
+  await beginActiveSession({
+    groupId: ownerRequest?.groupId || notifyGroup,
+    packageName: choice.packageName,
+    target,
+    engine: "bigfish-play",
+  });
   await sendModeledGameplayMessage({
     event: "大肥鱼突然想玩一个游戏，已经自己打开",
     facts: {
@@ -365,9 +397,16 @@ async function playChosenGame({
   selectionReason = "",
   ownerRequest = null,
 }) {
+  const finalGroupId = ownerRequest?.groupId || notifyGroup;
+  await updateActiveSession({
+    groupId: finalGroupId,
+    packageName,
+    target,
+    phase: "launching",
+  });
   await adbRun(device, ["shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"]);
   await delay(5000);
-  const scope = brainScope(ownerRequest?.groupId || notifyGroup);
+  const scope = brainScope(finalGroupId);
   const goal = await brain.goal(
     scope,
     `自主玩 ${target.name}`,
@@ -383,6 +422,12 @@ async function playChosenGame({
     target.name,
   ].filter(Boolean).join(" ");
   const agenticMode = resolveAgenticGameplayMode(maaHint, agenticGameplay);
+  await updateActiveSession({
+    goalId: goal?.id || null,
+    game: target.name,
+    mode: agenticMode?.name || target.name,
+    phase: "playing",
+  });
   if (!agenticMode) {
     const maaTask = resolveMaaTask(packageName, maaConfig, maaHint);
     if (maaTask) {
@@ -421,7 +466,6 @@ async function playChosenGame({
     observation: agenticMode?.observation,
     groupId: ownerRequest?.groupId || notifyGroup,
   });
-  const finalGroupId = ownerRequest?.groupId || notifyGroup;
   const stopQuestionBridge = startGameplayQuestionBridge({
     device,
     groupId: finalGroupId,
@@ -478,6 +522,11 @@ async function playWithMaa({
   ownerRequest = null,
 }) {
   const scope = brainScope(ownerRequest?.groupId || notifyGroup);
+  await updateActiveSession({
+    engine: "maa",
+    task,
+    phase: "running",
+  });
   const allowlist = maaConfig.taskAllowlist || [];
   if (!allowlist.includes(task)) {
     const error = `MAA task ${task} is not in the configured allowlist`;
@@ -1116,6 +1165,92 @@ async function notify(text, groupId = notifyGroup) {
   await connection.sendGroup(groupId, text, chatConfig.ownerQQ);
 }
 
+async function beginActiveSession({
+  groupId,
+  packageName,
+  target,
+  engine = "bigfish-play",
+}) {
+  state.running = true;
+  state.activeGroupId = String(groupId);
+  state.activeSession = {
+    groupId: String(groupId),
+    packageName,
+    game: target?.name || packageName,
+    target,
+    engine,
+    phase: "starting",
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  state.interruptedSession = null;
+  await saveState();
+}
+
+async function updateActiveSession(update) {
+  if (!state.activeSession) return;
+  state.activeGroupId = String(update.groupId || state.activeGroupId || state.activeSession.groupId || "");
+  state.activeSession = {
+    ...state.activeSession,
+    ...update,
+    groupId: state.activeGroupId,
+    updatedAt: new Date().toISOString(),
+  };
+  await saveState();
+}
+
+async function reportInterruptedGameplay(session) {
+  const groupId = allowedGroups.includes(String(session.groupId))
+    ? String(session.groupId)
+    : notifyGroup;
+  const active = session.activeSession || {};
+  const device = state.lastDevice || (await listDevices().catch(() => []))[0] || "";
+  const text = await composeGameplayMessage({
+    event: "游戏后台进程刚重启，上一局中断了；当前 MuMu 画面仍停在游戏里",
+    facts: {
+      game: active.game || active.target?.name || "未知游戏",
+      packageName: active.packageName || null,
+      phase: active.phase || "unknown",
+      mode: active.mode || null,
+      task: active.task || null,
+      startedAt: active.startedAt || null,
+      interruptedAt: session.interruptedAt,
+      device,
+    },
+    groupId,
+  }).catch(() => "");
+  await brain.action(
+    brainScope(groupId),
+    "gameplay_process_interrupted",
+    { activeSession: active, device },
+    text || "gameplay worker restarted during an active session",
+    false,
+  ).catch(() => null);
+  if (!text) {
+    log(`interrupted gameplay recovered for group=${groupId}; model message unavailable`);
+    return;
+  }
+  if (device) {
+    await sendGameplayFinalReport({ device, groupId, text });
+  } else {
+    await sendModeledGameplayMessage({
+      event: "游戏后台进程刚重启，上一局中断了；MuMu 当前不在线",
+      facts: {
+        existingSummary: text,
+        game: active.game || active.target?.name || null,
+        interruptedAt: session.interruptedAt,
+      },
+      groupId,
+    }).catch(() => null);
+  }
+  state.interruptedSession = {
+    ...session,
+    reportedAt: new Date().toISOString(),
+  };
+  await saveState();
+  log(`reported interrupted gameplay to group=${groupId}`);
+}
+
 function delay(ms) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
@@ -1125,7 +1260,16 @@ async function loadState(path) {
     return JSON.parse(await readFile(path, "utf8"));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    return { version: 1, running: false, lastSessionAt: 0, lastMissingAt: 0, lastDevice: "" };
+    return {
+      version: 1,
+      running: false,
+      activeGroupId: "",
+      activeSession: null,
+      interruptedSession: null,
+      lastSessionAt: 0,
+      lastMissingAt: 0,
+      lastDevice: "",
+    };
   }
 }
 

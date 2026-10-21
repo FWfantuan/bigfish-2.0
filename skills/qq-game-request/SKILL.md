@@ -16,4 +16,6 @@ When the owner explicitly says to go play, such as “去玩明日方舟” or �
 - Routine cooldown may be bypassed by this authenticated owner request. Payment, purchase, ads, account changes, privacy prompts, and other safety limits are never bypassed.
 - After the tool returns `queued: true`, answer in BigFish's own voice with one short, contextual line. Say what you are going to do or how you feel about it; do not use status-report phrases such as “任务已派发” or “worker 已启动”. Only claim the game opened after `mumud` reports a real launch or screenshot.
 - The gameplay worker is asynchronous. After `queued: true`, **do not call another tool, do not read state/status, do not start a sleep, and do not inspect source code**. In the same turn, immediately output one contextual sentence and end. The background worker will send launch, screenshots, questions and the final result to the same group.
+- If the owner follows up while that session is queued or running, call only `bigfish_gameplay_status` once and reply from its real state. Never use `android_interact`, `android_launch_app`, shell commands, or screenshot polling as a second game controller.
+- Direct @ messages are already owned by the live QQ chat lane. Do not create a second tool approval or proactive reply for the same message.
 - A tool error should be reported as-is without a source-code investigation loop.

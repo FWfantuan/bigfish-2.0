@@ -2,7 +2,7 @@
 function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
     if (officialMode || !ctx.tools?.register)
         return () => { };
-    const disposable = ctx.tools.register(defineTool({
+    const requestDisposable = ctx.tools.register(defineTool({
         name: 'bigfish_request_gameplay',
         description: 'Queue an immediate autonomous gameplay session when the owner explicitly orders BigFish to play. This bypasses routine cooldown but never bypasses payment, account, privacy, or other safety limits. Do not call it for a question or ordinary game discussion.',
         parameters: {
@@ -68,6 +68,136 @@ function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
             return { queued: true, group_id: String(groupId), ...(request.game ? { game: request.game } : {}) };
         },
     }));
+    const statusDisposable = ctx.tools.register(defineTool({
+        name: 'bigfish_gameplay_status',
+        description: 'Read the authoritative BigFish gameplay worker state. Use this for owner follow-up questions while a game is queued or running. It is read-only and never operates the emulator.',
+        parameters: {},
+        output: {
+            schema: {
+                type: 'string',
+            },
+            render: (_args, value) => [{
+                type: 'text',
+                text: value,
+            }],
+        },
+        isConcurrencySafe: () => true,
+        timeoutMs: 10000,
+        async execute(_args, exec) {
+            const sessionId = exec.agent?.session?.id;
+            const sessionKey = sessionId === undefined ? undefined : bigfishSessionTargets.get(sessionId);
+            if (!sessionKey)
+                throw new Error('当前 QQ 会话无法解析游戏状态目标');
+            const [scope, target] = String(sessionKey).split(':', 2);
+            if (scope !== 'group')
+                throw new Error('自动游戏状态只允许在 QQ 群会话中读取');
+            const [{ readFile }, { resolve }] = await Promise.all([
+                import('node:fs/promises'),
+                import('node:path'),
+            ]);
+            const projectRoot = process.env.BIGFISH_PROJECT_ROOT || process.cwd();
+            const readJson = async (name) => {
+                try {
+                    return JSON.parse(await readFile(resolve(projectRoot, 'data', 'mumud', name), 'utf8'));
+                }
+                catch {
+                    return null;
+                }
+            };
+            const [state, status, request, activeQuestion] = await Promise.all([
+                readJson('state.json'),
+                readJson('status.json'),
+                readJson('request.json'),
+                readJson('question.active.json'),
+            ]);
+            const activeSession = state?.activeSession ?? null;
+            const value = {
+                group_id: String(target),
+                running: state?.running === true,
+                queued: Boolean(request),
+                active_group_id: state?.activeGroupId ?? request?.groupId ?? null,
+                requested_game: request?.game ?? null,
+                request_reason: request?.reason ?? null,
+                target: status?.currentTarget ?? activeSession?.target ?? null,
+                phase: activeSession?.phase ?? (request ? 'queued' : state?.running ? 'running' : 'idle'),
+                pending_question: activeQuestion
+                    ? {
+                        game: activeQuestion.game ?? null,
+                        question: activeQuestion.question ?? activeQuestion.prompt ?? null,
+                    }
+                    : null,
+                last_session: status?.lastSession
+                    ? {
+                        game: status.lastSession.game ?? null,
+                        ok: status.lastSession.ok ?? null,
+                        completed_at: status.lastSession.completedAt ?? null,
+                        error: status.lastSession.error ?? null,
+                    }
+                    : null,
+                interrupted_session: state?.interruptedSession ?? null,
+                ownership:
+                    'The bigfish-play worker owns MuMu while queued or running. Do not call android_interact, android_launch_app, or shell commands to duplicate its gameplay. Reply from this state without polling.',
+            };
+            return JSON.stringify(value, null, 2);
+        },
+    }));
+    const gameplayToolGuard = typeof ctx.tools.guard === 'function'
+        ? ctx.tools.guard((execution) => {
+            const toolName = String(execution.name || '');
+            const sessionId = execution.agent?.session?.id;
+            const sessionKey = sessionId === undefined ? undefined : bigfishSessionTargets.get(sessionId);
+            if (!sessionKey)
+                return undefined;
+            const [scope, target] = String(sessionKey).split(':', 2);
+            if (scope !== 'group')
+                return undefined;
+            const mutatingAndroidTools = new Set([
+                'android_interact',
+                'android_launch_app',
+                'android_boot',
+                'android_shutdown',
+                'android_build_run',
+                'android_tap_element',
+                'android_tap_text',
+                'android_tap_row',
+            ]);
+            const shellLooksLikeAdb = (toolName === 'pwsh' || toolName === 'bash')
+                && /\badb\b|MuMuManager|com\.hypergryph/i.test(JSON.stringify(execution.arguments || {}));
+            if (!mutatingAndroidTools.has(toolName) && !shellLooksLikeAdb)
+                return undefined;
+            try {
+                const fs = process.getBuiltinModule('fs');
+                const path = process.getBuiltinModule('path');
+                const root = process.env.BIGFISH_PROJECT_ROOT || process.cwd();
+                const state = JSON.parse(fs.readFileSync(path.resolve(root, 'data', 'mumud', 'state.json'), 'utf8'));
+                const activeGroup = String(state.activeGroupId || state.activeSession?.groupId || '');
+                if (state.running === true && activeGroup === String(target))
+                    return 'The bigfish-play worker owns MuMu for this group. Do not start a second game controller; use bigfish_gameplay_status and reply from its state.';
+                const request = JSON.parse(fs.readFileSync(path.resolve(root, 'data', 'mumud', 'request.json'), 'utf8'));
+                const requestedAt = Date.parse(request.requestedAt);
+                if (
+                    String(request.groupId || '') === String(target)
+                    && Number.isFinite(requestedAt)
+                    && Date.now() - requestedAt >= 0
+                    && Date.now() - requestedAt <= 10 * 60_000
+                ) {
+                    return 'This group already has a fresh BigFish gameplay request. The mumud worker owns that operation; use bigfish_gameplay_status instead of operating MuMu from chat.';
+                }
+            }
+            catch {
+                // No active worker state is available, so normal tool policy applies.
+            }
+            return undefined;
+        })
+        : () => { };
     console.info('[bigfish-game] bigfish_request_gameplay registered');
-    return typeof disposable === 'function' ? disposable : () => disposable?.dispose?.();
+    console.info('[bigfish-game] bigfish_gameplay_status registered');
+    return () => {
+        for (const disposable of [gameplayToolGuard, requestDisposable, statusDisposable]) {
+            if (typeof disposable === 'function')
+                disposable();
+            else
+                disposable?.dispose?.();
+        }
+    };
 }

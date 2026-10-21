@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isQuietHour, normalizeDecision, validateDecision } from "../policy.mjs";
+import {
+  isDirectBotMention,
+  isQuietHour,
+  normalizeDecision,
+  proactiveMessages,
+  validateDecision,
+} from "../policy.mjs";
 
 const config = {
   groups: ["100"],
@@ -116,4 +122,26 @@ test("tool requests may only mention the owner", () => {
   });
   assert.equal(verdict.ok, false);
   assert.equal(verdict.reason, "tool-request-owner-only");
+});
+
+test("direct bot mentions are excluded from proactive decisions", () => {
+  const direct = {
+    text: "@机器人 等啥呢，还不进去",
+    raw: {
+      message: [
+        { type: "at", data: { qq: "900" } },
+        { type: "text", data: { text: " 等啥呢，还不进去" } },
+      ],
+    },
+  };
+  const ambient = {
+    text: "这游戏今天更新了",
+    raw: {
+      message: [{ type: "text", data: { text: "这游戏今天更新了" } }],
+    },
+  };
+
+  assert.equal(isDirectBotMention(direct, "900"), true);
+  assert.equal(isDirectBotMention(ambient, "900"), false);
+  assert.deepEqual(proactiveMessages([direct, ambient], "900"), [ambient]);
 });

@@ -3,7 +3,12 @@ import { resolve } from "node:path";
 import { loadConfig } from "./config.mjs";
 import { DshDecisionMaker, loadEnvironmentFiles } from "./dsh.mjs";
 import { OneBotConnection } from "./onebot.mjs";
-import { normalizeDecision, validateDecision } from "./policy.mjs";
+import {
+  isDirectBotMention,
+  normalizeDecision,
+  proactiveMessages,
+  validateDecision,
+} from "./policy.mjs";
 import { buildPrompt } from "./prompt.mjs";
 import { SocialState } from "./state.mjs";
 import { BrainClient } from "../shared/brain-client.mjs";
@@ -48,10 +53,23 @@ async function evaluateGroup(groupId) {
   evaluating.add(groupId);
   try {
     group.lastEvaluatedAt = now;
-    const recentSenderIds = new Set(group.messages.slice(-40).map((item) => item.senderId));
+    const ambientMessages = proactiveMessages(group.messages, config.botQQ);
+    if (ambientMessages.length === 0) {
+      group.nextCheckAt = Date.now() + config.evaluation.heartbeatMs;
+      await state.save();
+      log(`group=${groupId} skipped proactive evaluation: direct chat owns the recent messages`);
+      return;
+    }
+    const recentSenderIds = new Set(ambientMessages.slice(-40).map((item) => item.senderId));
     const scope = `group:${groupId}`;
     const brainContext = await brain.context(scope).catch(() => null);
-    const prompt = buildPrompt({ config, state: state.value, groupId, brainContext });
+    const prompt = buildPrompt({
+      config,
+      state: state.value,
+      groupId,
+      brainContext,
+      messages: ambientMessages,
+    });
     const result = await dsh.decide({ prompt, sessionId: group.sessionId, timeoutMs: config.dsh.timeoutMs });
     if (result.sessionId) group.sessionId = result.sessionId;
     const decision = normalizeDecision(result.decision);
@@ -160,8 +178,13 @@ connection = new OneBotConnection({
         text: message.text,
       }, true).catch(() => null);
       if (message.senderId === config.ownerQQ) void handleOwnerApproval(message);
-      scheduleGroup(message.groupId, config.evaluation.debounceMs);
       void state.save();
+      // Direct @ messages are owned by the live DSH chat session. Running the
+      // proactive decision loop on the same message created duplicate replies
+      // and fake tool approvals while an async gameplay worker was active.
+      if (!isDirectBotMention(message, config.botQQ)) {
+        scheduleGroup(message.groupId, config.evaluation.debounceMs);
+      }
       return;
     }
     if (config.privateAllowlist.includes(message.senderId) && message.text) {

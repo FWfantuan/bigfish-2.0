@@ -922,25 +922,17 @@ await patch(
 {
   const source = await readFile(qqPlugin, "utf8");
   const snippet = await readFile(qqScreenshotSnippet, "utf8");
-  let next = source;
-  if (!source.includes("bigfish_share_screenshot")) {
-    next = source
-      .replace(
-        "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);",
-        [
-          "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);",
-          "    const unregisterBigFishScreenshot = registerBigFishScreenshotTool(ctx, client, cfg, officialMode);",
-        ].join("\n"),
-      )
-      .replace(
-        "        unregisterBigFishFrames?.();",
-        [
-          "        unregisterBigFishFrames?.();",
-          "        unregisterBigFishScreenshot?.();",
-        ].join("\n"),
-      );
-    if (next === source) throw new Error(`screenshot registration target not found: ${qqPlugin}`);
-  }
+  const frameRegistration = "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);";
+  const screenshotRegistration = "    const unregisterBigFishScreenshot = registerBigFishScreenshotTool(ctx, client, cfg, officialMode);";
+  const frameCleanup = "        unregisterBigFishFrames?.();";
+  const screenshotCleanup = "        unregisterBigFishScreenshot?.();";
+  let next = source
+    .split(`${screenshotRegistration}\n`).join("")
+    .split(`${screenshotCleanup}\n`).join("");
+  if (!next.includes(frameRegistration)) throw new Error(`screenshot registration target not found: ${qqPlugin}`);
+  next = next
+    .replace(frameRegistration, `${frameRegistration}\n${screenshotRegistration}`)
+    .replace(frameCleanup, `${frameCleanup}\n${screenshotCleanup}`);
   const marker = "// BIGFISH_QQ_SHARE_SCREENSHOT_TOOL";
   const markerIndex = next.indexOf(marker);
   next = markerIndex >= 0
@@ -956,9 +948,10 @@ await patch(
 
 {
   const source = await readFile(qqPlugin, "utf8");
+  const snippet = await readFile(qqGameRequestSnippet, "utf8");
+  let next = source;
   if (!source.includes("bigfish_request_gameplay")) {
-    const snippet = await readFile(qqGameRequestSnippet, "utf8");
-    let next = source
+    next = source
       .replace(
         "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);",
         [
@@ -974,11 +967,26 @@ await patch(
         ].join("\n"),
       );
     if (next === source) throw new Error(`game request registration target not found: ${qqPlugin}`);
-    next += `\n${snippet}\n`;
-    await writeFile(qqPlugin, next, "utf8");
-    console.log(`patched: ${qqPlugin}`);
+  }
+  const markerIndex = next.indexOf("// BIGFISH_QQ_GAME_REQUEST_TOOL");
+  if (markerIndex >= 0) {
+    const nextSection = [
+      "// BIGFISH_QQ_SHARE_SCREENSHOT_TOOL",
+      "// BIGFISH_QQ_GAMEPLAY_ANSWER_TOOL",
+      "// BIGFISH_QQ_RECENT_HISTORY",
+    ]
+      .map((marker) => next.indexOf(marker, markerIndex + 1))
+      .filter((index) => index >= 0)
+      .sort((left, right) => left - right)[0] ?? -1;
+    next = `${next.slice(0, markerIndex)}${snippet.trimEnd()}\n${nextSection >= 0 ? `\n${next.slice(nextSection)}` : ""}`;
   } else {
-    console.log(`already patched: ${qqPlugin}`);
+    next = `${next.trimEnd()}\n\n${snippet.trimEnd()}\n`;
+  }
+  if (next !== source) {
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`patched QQ gameplay request and status tools: ${qqPlugin}`);
+  } else {
+    console.log(`already patched QQ gameplay request and status tools: ${qqPlugin}`);
   }
 }
 
@@ -1045,8 +1053,18 @@ await patch(
         "            void routeWithHistory(evt).catch((error) => console.warn(`[dsh-qq-bridge] message route failed: ${error instanceof Error ? error.message : String(error)}`));",
       );
   const markerIndex = next.indexOf("// BIGFISH_QQ_RECENT_HISTORY");
-  if (markerIndex >= 0) next = next.slice(0, markerIndex);
-  next = `${next.trimEnd()}\n\n${snippet.trimEnd()}\n`;
+  const nextSection = markerIndex >= 0
+    ? [
+        "// BIGFISH_QQ_SHARE_SCREENSHOT_TOOL",
+        "// BIGFISH_QQ_GAMEPLAY_ANSWER_TOOL",
+      ]
+        .map((marker) => next.indexOf(marker, markerIndex + 1))
+        .filter((index) => index >= 0)
+        .sort((left, right) => left - right)[0] ?? -1
+    : -1;
+  next = markerIndex >= 0
+    ? `${next.slice(0, markerIndex)}${snippet.trimEnd()}\n${nextSection >= 0 ? `\n${next.slice(nextSection)}` : ""}`
+    : `${next.trimEnd()}\n\n${snippet.trimEnd()}\n`;
   if (!next.includes(routerLine) || !next.includes("createBigFishQqHistory")) {
     throw new Error(`QQ recent-history injection target not found: ${qqPlugin}`);
   }
