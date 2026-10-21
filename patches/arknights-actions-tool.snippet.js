@@ -473,7 +473,7 @@ export function createBigFishArknightsTools() {
         operatorName: String(args.operatorName || "").trim().slice(0, 80),
         direction: gesture.direction,
         changed: before.digest !== after.digest,
-        resumedBeforeAction,
+        resumedBeforeAction: resumeBeforeAction,
         pausedAfterAction,
         postActionScreenshotPath,
       };
