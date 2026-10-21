@@ -6,10 +6,10 @@ function registerBigFishFramesTool(ctx, client, cfg, officialMode) {
     void frameRoot;
     const disposable = ctx.tools.register(defineTool({
         name: 'bigfish_send_bili_frames',
-        description: 'Extract real keyframes from one Bilibili video and immediately send 1-6 JPEG images to the current QQ group or owner private chat. Use only after the owner explicitly asks to see frames.',
+        description: 'Extract one real keyframe from a Bilibili video and send it to the current QQ group or owner private chat. Send multiple images only when the owner explicitly asks for more than one.',
         parameters: {
             bvid: { type: 'string', required: true, description: 'Bilibili BV id, for example BV1fwnv6nEYb.' },
-            count: { type: 'number', description: 'Number of evenly spaced frames, 1-6. Default 4.' },
+            count: { type: 'number', description: 'Number of frames, 1-6. Default 1; use more only when the owner explicitly requests multiple images.' },
             caption: { type: 'string', description: 'Optional short text sent after the images.' },
         },
         output: {
@@ -49,7 +49,7 @@ function registerBigFishFramesTool(ctx, client, cfg, officialMode) {
             const { extractBilibiliFrames } = await import(moduleUrl);
             const result = await extractBilibiliFrames({
                 bvid: String(args.bvid),
-                count: Math.max(1, Math.min(6, Number(args.count || 4))),
+                count: Math.max(1, Math.min(6, Number(args.count || 1))),
             });
             const message = [];
             for (const frame of result.frames) {

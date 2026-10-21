@@ -11,9 +11,9 @@ const FRAME_ROOT = resolve(process.env.BIGFISH_FRAME_ROOT || "data/media/frames"
 const MAX_VIDEO_BYTES = Number(process.env.BIGFISH_FRAME_MAX_VIDEO_BYTES || 150 * 1024 * 1024);
 const RETENTION_MS = Number(process.env.BIGFISH_FRAME_RETENTION_MS || 7 * 24 * 3600 * 1000);
 
-export async function extractBilibiliFrames({ bvid, count = 6 }) {
+export async function extractBilibiliFrames({ bvid, count = 1 }) {
   if (!/^BV[0-9A-Za-z]+$/.test(String(bvid || ""))) throw new Error("invalid bvid");
-  const frameCount = Math.max(1, Math.min(8, Math.trunc(Number(count) || 6)));
+  const frameCount = Math.max(1, Math.min(8, Math.trunc(Number(count) || 1)));
   const headers = { "user-agent": USER_AGENT, referer: REFERER };
 
   const detail = await getJson(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`, headers);
@@ -115,7 +115,7 @@ async function cleanupOldFrames() {
 
 if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, "/")}`) {
   const bvid = process.argv[2];
-  const count = Number(process.argv[3] || 6);
+  const count = Number(process.argv[3] || 1);
   const result = await extractBilibiliFrames({ bvid, count });
   console.log(JSON.stringify(result));
 }

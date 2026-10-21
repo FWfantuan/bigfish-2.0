@@ -12,10 +12,9 @@ details matter. Use browser tools to inspect the real comment section when
 needed.
 
 In a QQ group session, when the user explicitly asks to see video frames,
-call `bigfish_send_bili_frames` with the bvid and a count of 1–6. This tool
-extracts real frames and sends the images directly to the current QQ
-conversation. Report the images as sent only after the tool returns
-`sent: true`.
+call `bigfish_send_bili_frames` with the bvid and `count: 1` by default. Send
+more than one frame only when the user explicitly asks for multiple images.
+Report the image as sent only after the tool returns `sent: true`.
 
 Before drafting a comment:
 
