@@ -1,8 +1,8 @@
 # MAA gameplay engine
 
-BigFish uses the user's installed MAA as an optional external engine for
-Arknights. The agent still decides whether and what to play, while MAA handles
-the fast recognition and action loop that the vision model is poor at.
+BigFish uses the user's installed MAA as an optional external engine for one
+ordinary Arknights safe task. Roguelike strategy remains BigFish's own
+decision: the profile does not execute MAA's autonomous Roguelike tasks.
 
 The useful ideas adopted from MAA are:
 
@@ -57,16 +57,17 @@ The only mapped game task is `arknights-safe` for
 - `series = 1`;
 - no uploads to Penguin Statistics or Yituliu.
 
-When the owner explicitly asks for Integrated Strategies, one of five bounded
-theme labs is selected: JieGarden, Sarkaz, Sami, Phantom or Mizuki. A generic
-"肉鸽" request uses JieGarden, while a named theme selects that theme. Every lab
-runs at most one exploration, disables Originium Ingot investment and avoids
-paid currency, purchases and support recruitment.
+When the owner asks for Integrated Strategies, `mumud` resolves the request to
+the `arknights-roguelike` agentic gameplay mode and calls the isolated visual
+worker without dispatching a MAA Roguelike task. BigFish makes the squad,
+recruitment, relic, route and battle decisions. It pauses combat before a
+deployment decision, observes and acts in small verified steps, then briefly
+resumes only to observe DP or enemy movement.
 
-The first two actions remain `StartUp` and `Roguelike`. A task that only reaches
-the theme overview because another theme is active is recorded as
-`meaningful: false`; it never contributes learning evidence. A run becomes a
-valid sample only after MAA logs `Start exploration` or starts a combat.
+MAA resources may be read as knowledge and low-level recognition/action ideas,
+but `arknights-roguelike-*` task IDs are not present in the executable
+allowlist. This prevents MAA from silently making the strategic choices that
+belong to BigFish.
 
 The model cannot provide an arbitrary MAA task name, JSON pipeline, stage
 parameters or callback. `config/gameplay.json` maps packages to fixed task IDs,
@@ -86,9 +87,8 @@ safe task allowlist, resolution check and last engine used. The full MAA output
 tail and log path are retained in the Brain session. QQ only receives a short
 BigFish-style result so the group does not get a technical report.
 
-Roguelike learning records include theme, mode, squad, difficulty, run limit,
-investment policy, task completion, battle lines, errors and filtered node or
-recruitment evidence. Generic Brain reflection turns repeated evidence into
-candidate `arknights_roguelike` skills. Those skills require at least five
+Agentic roguelike sessions record the actual decisions, failures, reasons for
+asking and verified outcomes in Brain. Reflection can turn repeated evidence
+into candidate `arknights_roguelike` skills. Those skills require at least five
 observed uses, three successes and a 60% success rate before activation, which
 reduces the chance of treating one lucky run as a permanent strategy.

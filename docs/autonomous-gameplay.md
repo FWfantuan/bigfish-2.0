@@ -2,9 +2,11 @@
 
 `services/mumud` watches the MuMu ADB device. After MuMu becomes available, BigFish can inspect the device and decide for itself whether and what to play. No game is prescribed when `targets` is empty and autonomous choice is enabled.
 
-Arknights first tries the user-local MAA engine through a fixed safe task. MAA
-provides the fixed-resolution recognition and state/action graph; the isolated
-vision worker remains the fallback when MAA is unavailable. See
+Arknights has two deliberately separate paths. Ordinary safe battles may use
+the user-local MAA `arknights-safe` task. Roguelike requests use the isolated
+vision worker as the decision maker: BigFish chooses the squad, recruitment,
+relics, route, deployment tiles, facing directions and skill plan. MAA's
+monolithic Roguelike tasks are not executable in this profile. See
 [MAA gameplay engine](maa-gameplay-engine.md).
 
 ```text
@@ -29,9 +31,13 @@ The QQ chat route and gameplay route are separate. The QQ session may use a text
 
 The worker starts at most one play decision per online emulator session. A 60-minute cooldown prevents repeated decisions while MuMu stays open. Taking MuMu offline clears the previous session timestamp, so closing and reopening the emulator gives BigFish a new opportunity to decide.
 
-The full tool trajectory and factual report are retained for Brain learning, but the QQ group receives only the play agent's `QQ_SUMMARY` line. The prompt requires 2–4 short, casual sentences in BigFish's voice without Markdown headings or task-report formatting.
+The full tool trajectory and factual report are retained for Brain learning, but the QQ group receives only the play agent's `QQ_SUMMARY` line. The prompt asks for 1–3 short, casual sentences in BigFish's voice without Markdown headings, action-count lists or task-report formatting. There is no automatic “game launched” message and no fixed opening narration.
 
-An explicit owner request is different from the routine autonomous cooldown. The QQ tool `bigfish_request_gameplay` verifies the current group and the platform-provided `is_owner=true` identity before writing a short-lived request to `data/mumud/request.json`. `mumud` atomically consumes that request, bypasses routine cooldown, records it in Brain, and sends one real emulator screenshot after launch. Safety rules are not bypassed.
+An explicit owner request is different from the routine autonomous cooldown. The QQ tool `bigfish_request_gameplay` verifies the current group and the platform-provided `is_owner=true` identity before writing a short-lived request to `data/mumud/request.json`. `mumud` atomically consumes that request, bypasses routine cooldown, and records it in Brain. Safety rules are not bypassed.
+
+During a longer session, a read-only observer checks the real screen after the initial delay and at the configured interval. It stays quiet for ordinary progress, shares a screenshot when a visible moment is genuinely worth showing, and asks the owner when a decision is truly blocked. Duplicate images are suppressed. `maxShares: 0` means there is no fixed share-count cap; the model still follows the no-spam rule and the configured interval.
+
+The QQ chat route can also call `bigfish_share_screenshot` directly. In an owner conversation in a whitelisted group, or in owner private chat, no second confirmation is requested: the tool captures the current online ADB device, saves a local copy, and sends the image to that conversation. Non-owner and out-of-whitelist calls are rejected.
 
 Named games can be mapped to their installed package in `gameAliases`. When an owner request exactly matches a configured alias and that package is installed, the worker starts it directly instead of spending another model turn deciding whether to play it. The autonomous choice path remains for open requests such as “随便玩”.
 

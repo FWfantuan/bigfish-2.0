@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -9,13 +10,16 @@ import { OneBotConnection } from "../sociald/onebot.mjs";
 import { BrainClient } from "../shared/brain-client.mjs";
 import {
   buildGameChoicePrompt,
+  buildGameplayObservationPrompt,
   buildGameplayPrompt,
   extractGameplayQqSummary,
   findTargetPackage,
   normalizeGameChoice,
+  normalizeGameplayObservation,
   parseInstalledPackages,
   parseOnlineDevices,
   reconcileDevicePresence,
+  resolveAgenticGameplayMode,
   resolveConfiguredGame,
   sessionGate,
   validateGameplayRequest,
@@ -47,8 +51,10 @@ const manager = process.env.MUMU_MANAGER || "D:\\MuMuPlayer\\nx_main\\MuMuManage
 const notifyGroup = process.env[gameConfig.notifyGroupEnv] || chatConfig.groups[0];
 const brain = new BrainClient();
 const playDsh = new DshDecisionMaker({ profile: "bigfish-play", timeoutMs: 900000 });
+const gameObserverDsh = new DshDecisionMaker({ profile: "bigfish-play", timeoutMs: 45000 });
 const explicitTarget = gameConfig.targets?.[0];
 const autonomy = gameConfig.autonomy || { enabled: false };
+const agenticGameplay = gameConfig.agenticGameplay || { enabled: false, modes: [] };
 const maaConfig = gameConfig.maa || { enabled: false };
 const maaRunner = new MaaRunner(maaConfig);
 let maaProbe = {
@@ -160,7 +166,6 @@ async function poll() {
       state.running = true;
       state.lastSessionAt = now;
       await saveState();
-      await notify(`看到 MuMu 了，我自己打开“${explicitTarget.name}”玩一会儿。`);
       await playChosenGame({
         device,
         packageName,
@@ -210,7 +215,6 @@ async function chooseAndPlay(device, now, ownerRequest = null) {
     await saveStatus();
     state.running = true;
     await saveState();
-    await notify(`主人点了“${target.name}”，我直接去玩。`);
     await playChosenGame({
       device,
       packageName: configured.packageName,
@@ -287,12 +291,6 @@ async function playChosenGame({
 }) {
   await adbRun(device, ["shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"]);
   await delay(5000);
-  if (ownerRequest) {
-    await sendGameplayScreenshot({ device, game: target.name, reason: ownerRequest.reason }).catch(async (error) => {
-      log(`gameplay screenshot send failed: ${error.message}`);
-      await notify(`游戏开了，但截图没发出去：${error.message.slice(0, 300)}`).catch(() => null);
-    });
-  }
   const scope = brainScope();
   const goal = await brain.goal(
     scope,
@@ -308,24 +306,55 @@ async function playChosenGame({
     target.objective,
     target.name,
   ].filter(Boolean).join(" ");
-  const maaTask = resolveMaaTask(packageName, maaConfig, maaHint);
-  if (maaTask) {
-    const maaOutcome = await playWithMaa({
-      device,
-      packageName,
-      target,
-      goal,
-      task: maaTask,
-      selectionReason,
-    });
-    if (maaOutcome.handled) return;
+  const agenticMode = resolveAgenticGameplayMode(maaHint, agenticGameplay);
+  if (!agenticMode) {
+    const maaTask = resolveMaaTask(packageName, maaConfig, maaHint);
+    if (maaTask) {
+      const maaOutcome = await playWithMaa({
+        device,
+        packageName,
+        target,
+        goal,
+        task: maaTask,
+        selectionReason,
+        ownerRequest,
+      });
+      if (maaOutcome.handled) return;
+    }
   }
-  const prompt = buildGameplayPrompt({ target, device, packageName, goalId: goal?.id });
-  const result = await playDsh.decide({
-    prompt,
-    sessionId,
-    timeoutMs: target.maxSessionMinutes * 60000,
+  const activeTarget = agenticMode
+    ? {
+        ...target,
+        objective: agenticMode.objective || target.objective,
+        maxSessionMinutes: Number(agenticMode.maxSessionMinutes || target.maxSessionMinutes),
+        maxActions: Number(agenticMode.maxActions || target.maxActions),
+        webSearch: agenticMode.webSearch !== false,
+      }
+    : target;
+  const prompt = buildGameplayPrompt({
+    target: activeTarget,
+    device,
+    packageName,
+    goalId: goal?.id,
+    agenticMode,
   });
+  const stopObserver = startGameplayObserver({
+    device,
+    game: activeTarget.name,
+    modeName: agenticMode?.name || "",
+    observation: agenticMode?.observation,
+    groupId: ownerRequest?.groupId || notifyGroup,
+  });
+  let result;
+  try {
+    result = await playDsh.decide({
+      prompt,
+      sessionId,
+      timeoutMs: activeTarget.maxSessionMinutes * 60000,
+    });
+  } finally {
+    await stopObserver();
+  }
   const summary = String(result.raw || "这局没有产生可读结果").trim().slice(0, 3000);
   await brain.action(scope, "autonomous_game_session", {
     game: target.name,
@@ -344,10 +373,18 @@ async function playChosenGame({
     completedAt: new Date().toISOString(),
   };
   await saveStatus();
-  await notify(extractGameplayQqSummary(summary));
+  await notify(extractGameplayQqSummary(summary), ownerRequest?.groupId || notifyGroup);
 }
 
-async function playWithMaa({ device, packageName, target, goal, task, selectionReason }) {
+async function playWithMaa({
+  device,
+  packageName,
+  target,
+  goal,
+  task,
+  selectionReason,
+  ownerRequest = null,
+}) {
   const scope = brainScope();
   const allowlist = maaConfig.taskAllowlist || [];
   if (!allowlist.includes(task)) {
@@ -434,19 +471,26 @@ async function playWithMaa({ device, packageName, target, goal, task, selectionR
     return { handled: true, result };
   }
 
-  await notify(
-    taskProfile.domain === "arknights_roguelike"
-      ? "这局开肉鸽实训，我只放一局，不买源石、不投资源石锭。打完我会把结果写进脑子复盘。"
-      : "这局让 MAA 接一下手，我只放了一个安全任务：打一把，不动药和石头。",
-  );
-  const result = await maaRunner.run({
-    task,
-    address: device,
-    timeoutMs: Number(
-      taskProfile.maxRuntimeMinutes || maaConfig.maxRuntimeMinutes || 20,
-    ) * 60_000,
-    verbose: taskProfile.verbose === true,
+  const stopObserver = startGameplayObserver({
+    device,
+    game: target.name,
+    modeName: target.name,
+    observation: maaConfig.observation,
+    groupId: ownerRequest?.groupId || notifyGroup,
   });
+  let result;
+  try {
+    result = await maaRunner.run({
+      task,
+      address: device,
+      timeoutMs: Number(
+        taskProfile.maxRuntimeMinutes || maaConfig.maxRuntimeMinutes || 20,
+      ) * 60_000,
+      verbose: taskProfile.verbose === true,
+    });
+  } finally {
+    await stopObserver();
+  }
   const learningRecord = buildMaaLearningRecord({ task, taskProfile, result });
   const factualSummary = result.ok
     ? [
@@ -606,7 +650,106 @@ async function waitForOnlineDevice(timeoutMs) {
   return "";
 }
 
-async function sendGameplayScreenshot({ device, game, reason }) {
+function startGameplayObserver({
+  device,
+  game,
+  modeName = "",
+  observation = null,
+  groupId = notifyGroup,
+}) {
+  const config = observation || {};
+  if (config.enabled === false || !observation) {
+    return async () => {};
+  }
+  const firstDelayMs = Number(config.firstDelayMs || 45_000);
+  const intervalMs = Number(config.intervalMs || 90_000);
+  const timeoutMs = Number(config.timeoutMs || 45_000);
+  const maxShares = Number(config.maxShares ?? 2) === 0
+    ? Number.POSITIVE_INFINITY
+    : Number(config.maxShares ?? 2);
+  const maxQuestions = Number(config.maxQuestions ?? 2) === 0
+    ? Number.POSITIVE_INFINITY
+    : Number(config.maxQuestions ?? 2);
+  let stopped = false;
+  let timer = null;
+  let inFlight = null;
+  let shares = 0;
+  let questions = 0;
+  const sharedDigests = new Set();
+  const startedAt = Date.now();
+
+  const schedule = (delayMs) => {
+    if (stopped) return;
+    timer = setTimeout(() => {
+      inFlight = observe()
+        .catch((error) => log(`gameplay observer failed: ${error.message}`))
+        .finally(() => {
+          inFlight = null;
+          schedule(intervalMs);
+        });
+    }, Math.max(1_000, delayMs));
+    timer.unref?.();
+  };
+
+  const observe = async () => {
+    if (stopped || (shares >= maxShares && questions >= maxQuestions)) return;
+    const decision = await gameObserverDsh.decide({
+      prompt: buildGameplayObservationPrompt({
+        game,
+        modeName,
+        elapsedSeconds: Math.floor((Date.now() - startedAt) / 1000),
+        shares,
+        questions,
+        maxShares: config.maxShares ?? 2,
+        maxQuestions: config.maxQuestions ?? 2,
+      }),
+      timeoutMs,
+    });
+    if (stopped) return;
+    const observation = normalizeGameplayObservation(decision.decision);
+    if (observation.action === "none") return;
+    if (observation.action === "share" && shares < maxShares) {
+      const screenshot = await captureGameplayScreenshot(device);
+      if (sharedDigests.has(screenshot.digest)) return;
+      sharedDigests.add(screenshot.digest);
+      await sendGameplayImage({
+        screenshot,
+        caption: observation.text || "这波有点意思 给你看一眼",
+        groupId,
+      });
+      shares += 1;
+    }
+    if (observation.action === "ask" && questions < maxQuestions) {
+      const screenshot = await captureGameplayScreenshot(device);
+      await sendGameplayImage({
+        screenshot,
+        caption: observation.text || "这里我拿不准 你看一下该怎么选",
+        mentionOwner: true,
+        groupId,
+      });
+      questions += 1;
+    }
+    await brain.action(brainScope(), "gameplay_observation", {
+      engine: "bigfish-play",
+      game,
+      action: observation.action,
+      reason: observation.reason,
+      shares,
+      questions,
+    }, observation.text || observation.reason, true).catch(() => null);
+  };
+
+  schedule(firstDelayMs);
+  return async () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    if (inFlight) {
+      await Promise.race([inFlight.catch(() => null), delay(3_000)]);
+    }
+  };
+}
+
+async function captureGameplayScreenshot(device) {
   const binary = await execFileAsync(adb, ["-s", device, "exec-out", "screencap", "-p"], {
     windowsHide: true,
     timeout: 30000,
@@ -619,15 +762,33 @@ async function sendGameplayScreenshot({ device, game, reason }) {
   await mkdir(directory, { recursive: true });
   const path = resolve(directory, `${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
   await writeFile(path, bytes);
+  return {
+    bytes,
+    path,
+    digest: createHash("sha256").update(bytes).digest("hex"),
+  };
+}
+
+async function sendGameplayImage({
+  screenshot,
+  caption,
+  mentionOwner = false,
+  groupId = notifyGroup,
+}) {
+  const message = [];
+  if (mentionOwner) {
+    message.push(
+      { type: "at", data: { qq: String(chatConfig.ownerQQ) } },
+      { type: "text", data: { text: " " } },
+    );
+  }
+  message.push(
+    { type: "image", data: { file: `base64://${screenshot.bytes.toString("base64")}` } },
+    { type: "text", data: { text: `\n${caption}` } },
+  );
   await connection.action("send_group_msg", {
-    group_id: Number(notifyGroup),
-    message: [
-      { type: "image", data: { file: `base64://${bytes.toString("base64")}` } },
-      {
-        type: "text",
-        data: { text: `\n${game} 已启动。${reason ? `这局目标：${reason}` : ""}` },
-      },
-    ],
+    group_id: Number(groupId),
+    message,
   });
 }
 
@@ -663,8 +824,8 @@ function parsePackages(output) {
   return parseInstalledPackages(output);
 }
 
-async function notify(text) {
-  await connection.sendGroup(notifyGroup, text, chatConfig.ownerQQ);
+async function notify(text, groupId = notifyGroup) {
+  await connection.sendGroup(groupId, text, chatConfig.ownerQQ);
 }
 
 function delay(ms) {

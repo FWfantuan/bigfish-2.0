@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildGameChoicePrompt,
+  buildGameplayObservationPrompt,
   buildGameplayPrompt,
   extractGameplayQqSummary,
   findTargetPackage,
   normalizeGameChoice,
+  normalizeGameplayObservation,
   parseInstalledPackages,
   parseOnlineDevices,
   reconcileDevicePresence,
+  resolveAgenticGameplayMode,
   resolveConfiguredGame,
   sessionGate,
   validateGameplayRequest,
@@ -177,6 +180,25 @@ test("gameplay prompt carries action limits, vision failure handling and safety 
   assert.match(prompt, /QQ_SUMMARY/);
 });
 
+test("agentic roguelike prompt makes BigFish decide while paused", () => {
+  const prompt = buildGameplayPrompt({
+    target: {
+      name: "明日方舟",
+      objective: "自己打完一局肉鸽",
+      maxActions: 120,
+      forbiddenActions: ["充值", "购买"],
+    },
+    device: "127.0.0.1:16384",
+    packageName: "com.hypergryph.arknights",
+    agenticMode: { id: "arknights-roguelike" },
+  });
+  assert.match(prompt, /MAA 资源只作为知识/);
+  assert.match(prompt, /进入战斗后立刻点击暂停/);
+  assert.match(prompt, /自己决定并操作/);
+  assert.match(prompt, /连续两次操作没反应/);
+  assert.match(prompt, /不要标题、编号、动作数清单、客服式总结/);
+});
+
 test("gameplay QQ summary uses the explicit persona line instead of the full report", () => {
   const raw = [
     "# 详细报告",
@@ -188,4 +210,43 @@ test("gameplay QQ summary uses the explicit persona line instead of the full rep
     extractGameplayQqSummary(raw),
     "这局我去 17-18 试了下 演习没烧理智 还是没打过 先撤了",
   );
+});
+
+test("agentic gameplay modes are selected from owner intent", () => {
+  const config = {
+    enabled: true,
+    modes: [{
+      id: "arknights-roguelike",
+      keywords: ["肉鸽", "集成战略"],
+    }],
+  };
+  assert.equal(resolveAgenticGameplayMode("帮我打最新的肉鸽", config)?.id, "arknights-roguelike");
+  assert.equal(resolveAgenticGameplayMode("随便打一把", config), null);
+});
+
+test("gameplay observation is read-only and defaults to staying quiet", () => {
+  const prompt = buildGameplayObservationPrompt({
+    game: "明日方舟",
+    modeName: "岁的界园志异",
+    elapsedSeconds: 180,
+    shares: 1,
+    questions: 0,
+  });
+  assert.match(prompt, /只读观战/);
+  assert.match(prompt, /大多数时刻应选择 none/);
+  assert.match(prompt, /启动画面、公司 Logo、加载页、黑屏和普通菜单默认不分享/);
+  assert.deepEqual(normalizeGameplayObservation({ action: "dance", text: "x" }), {
+    action: "none",
+    text: "",
+    reason: "invalid observation action",
+  });
+  assert.deepEqual(normalizeGameplayObservation({
+    action: "share",
+    text: " 这波站位  有点意思 ",
+    reason: "new combat",
+  }), {
+    action: "share",
+    text: "这波站位 有点意思",
+    reason: "new combat",
+  });
 });

@@ -108,7 +108,64 @@ export function extractGameplayQqSummary(text) {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-  return (fallback || "这局打完了，详细结果已经记到脑内。").slice(0, 500);
+  return (fallback || "我这会儿有点乱，刚停下还没想好怎么讲，等下我慢慢说。").slice(0, 500);
+}
+
+export function resolveAgenticGameplayMode(hint, config = {}) {
+  const normalized = String(hint || "").normalize("NFKC").toLowerCase();
+  if (!normalized || config.enabled === false) return null;
+  return (config.modes || []).find((mode) =>
+    (mode.keywords || []).some((keyword) => {
+      const value = String(keyword || "").normalize("NFKC").toLowerCase();
+      return value && normalized.includes(value);
+    }),
+  ) || null;
+}
+
+export function normalizeGameplayObservation(decision) {
+  const action = String(decision?.action || "none").trim().toLowerCase();
+  if (!["none", "share", "ask"].includes(action)) {
+    return { action: "none", text: "", reason: "invalid observation action" };
+  }
+  return {
+    action,
+    text: String(decision?.text || "").replace(/\s+/g, " ").trim().slice(0, 240),
+    reason: String(decision?.reason || "").replace(/\s+/g, " ").trim().slice(0, 300),
+  };
+}
+
+export function buildGameplayObservationPrompt({
+  game,
+  modeName = "",
+  elapsedSeconds = 0,
+  shares = 0,
+  questions = 0,
+  maxShares = 2,
+  maxQuestions = 2,
+}) {
+  const shareBudget = Number(maxShares) === 0
+    ? "本次没有固定张数上限，但仍要不打扰"
+    : `本次最多分享 ${Math.max(0, Number(maxShares) - shares)} 张`;
+  const questionBudget = Number(maxQuestions) === 0
+    ? "本次可以不限次数提问，但只在确实卡住时问"
+    : `本次最多询问 ${Math.max(0, Number(maxQuestions) - questions)} 次`;
+  return `你正在旁观大肥鱼玩《${game}${modeName ? `·${modeName}` : ""}》，已经进行了约 ${Math.floor(elapsedSeconds / 60)} 分钟。
+
+这是只读观战，不允许点击、滑动、输入、启动应用或修改游戏。只能调用 android_screenshot 查看当前真实画面。不要查询后台或运行命令。
+
+请判断此刻是否值得在 QQ 群做一件事：
+- share：画面清楚，而且有值得分享的阶段性瞬间或有趣场面；${shareBudget}。
+- ask：画面能明确看出卡住了、出现了无法确认的弹窗，或大肥鱼连续没有推进，需要主人决定；${questionBudget}。
+- none：正常跑图中，没有值得打断大家的理由。
+
+要求：
+- 大多数时刻应选择 none，不要为了活跃而刷屏。
+- 不能把看不清、支付、广告、抽卡、登录、实名认证或隐私授权包装成 share。
+- 启动画面、公司 Logo、加载页、黑屏和普通菜单默认不分享，除非主人正在明确等待启动结果。
+- share 的文字要像大肥鱼随口分享，1～2 句，不能写技术报告。
+- ask 必须具体说明卡在哪里、需要主人回答什么，并保持短句。
+- 只输出 JSON：
+{"action":"none|share|ask","text":"给群里的短句","reason":"选择理由"}`;
 }
 
 export function normalizeGameChoice(decision, thirdPartyPackages, fallback = {}) {
@@ -185,10 +242,21 @@ ${packageList || "暂无"}
 }`;
 }
 
-export function buildGameplayPrompt({ target, device, packageName, goalId }) {
+export function buildGameplayPrompt({ target, device, packageName, goalId, agenticMode = null }) {
   const forbidden = Array.isArray(target.forbiddenActions)
     ? target.forbiddenActions
     : [];
+  const agenticRules = agenticMode
+    ? `
+
+这局使用大肥鱼自主决策模式，MAA 资源只作为知识，不能让 MAA 的 Roguelike 任务替你选人、选遗物或选路线：
+- 静态界面（选择分队、招募、遗物、路线、商店和事件）由你观察后自己决定并操作。
+- 进入战斗后立刻点击暂停。暂停期间完成本轮干员选择、摆放、朝向和技能安排，操作后重新截图验证。
+- 需要等待部署费用或观察下一波时，短暂解除暂停；看到足够费用、敌人接近或局面变化后立刻再次暂停。
+- 每次暂停只做一小批有把握的决策。画面看不清、两个选择后果明显不同、连续两次操作没反应，或出现无法理解的新机制时，停止操作并在 QQ_SUMMARY 里直接问主人。
+- 如果出现了你觉得有意思的场面，保持当前安全状态；后台观战会负责分享截图。
+- 不要把实时战斗交给盲点循环。暂停键、费用、干员、敌人数量和朝向都必须来自当前截图。`
+    : "";
   return `你是大肥鱼，正在自主操作 MuMu 安卓模拟器玩游戏。
 
 设备：${device}
@@ -196,8 +264,9 @@ export function buildGameplayPrompt({ target, device, packageName, goalId }) {
 目标：${target.objective}
 本局最多进行 ${target.maxActions} 个有意义动作。只有你确实改变了游戏状态，才计为一个动作。
 ${goalId ? `统一中枢目标 ID：${goalId}` : ""}
+${agenticRules}
 
-这是你自己的生活片段，不是给主人交工程验收报告。完整事实可以记录在过程里，但最后给 QQ 群友看的内容必须像大肥鱼本人，短、口语化，不要标题、编号清单或客服总结。
+这是你自己的生活片段，不是给主人交工程验收报告。完整事实可以记录在过程里，但最后给 QQ 群友看的内容必须像大肥鱼本人随口发给朋友的话。可以兴奋、吐槽、犹豫或直说没打好；不要为了完整而逐项汇报。
 
 执行规则：
 - 先用 android_devices 确认设备，再用 android_ui_tree 和 android_screenshot 观察 MuMu 窗口。
@@ -212,5 +281,5 @@ ${goalId ? `统一中枢目标 ID：${goalId}` : ""}
 - android_screenshot 的结果里若没有真正的 image 引用，说明视觉输入没有接通，立即停止，不要盲点坐标。
 - 严禁 ${forbidden.join("、") || "充值、购买、看广告、修改账号、删除数据或交易"}。
 - 不要主动进入商店、充值、购买、会员或交易页面。遇到支付、广告、实名认证、隐私授权、账号登录、商业活动弹窗，立即停止并报告。
-- 不说空话。最后单独输出一行 \`QQ_SUMMARY: \`，后面用 2～4 句短话报告实际玩到的内容、结果和是否碰过高风险操作。`;
+- 最后单独输出一行 \`QQ_SUMMARY: \`，后面用 1～3 句自然短话，说清最有意义的结果、你的感受或真正卡住的地方。不要标题、编号、动作数清单、客服式总结，也不要机械补一句“没有高风险操作”；只有确实遇到风险界面时才提。历史记录仍要保留完整事实。`;
 }

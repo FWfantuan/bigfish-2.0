@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
@@ -29,6 +29,7 @@ const qqRouter = resolve(
 );
 const qqFramesSnippet = resolve("patches/qq-frames-tool.snippet.js");
 const qqGameRequestSnippet = resolve("patches/qq-game-request-tool.snippet.js");
+const qqScreenshotSnippet = resolve("patches/qq-screenshot-tool.snippet.js");
 const playProfilePatch = resolve(
   dshHome,
   "profiles/bigfish-play/cordis.patch.yml",
@@ -41,6 +42,8 @@ const qqAgentPreset = resolve(
   dshHome,
   ".agent-presets/dsh-qq-bridge/agent.cordis.yml",
 );
+const projectSkills = resolve("skills");
+const qqSkills = resolve(dshHome, ".agent-presets/dsh-qq-bridge/skills");
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
 );
@@ -217,6 +220,22 @@ async function ensureQqVisionModel() {
 
 await ensureQqVisionModel();
 
+async function syncProjectSkills() {
+  await mkdir(qqSkills, { recursive: true });
+  const entries = await readdir(projectSkills, { withFileTypes: true });
+  const skills = entries.filter((entry) => entry.isDirectory());
+  for (const skill of skills) {
+    await cp(
+      resolve(projectSkills, skill.name),
+      resolve(qqSkills, skill.name),
+      { recursive: true, force: true },
+    );
+  }
+  console.log(`synced ${skills.length} project skills: ${qqSkills}`);
+}
+
+await syncProjectSkills();
+
 async function ensureQqSystemPersona() {
   let profileSource;
   try {
@@ -290,10 +309,9 @@ async function ensureQqSystemPersona() {
   if (customPresetStart < 0 || customPresetEnd < 0) {
     throw new Error(`custom BigFish preset patch anchors not found: ${qqProfilePatch}`);
   }
-  const skillsDir = resolve(dshHome, ".agent-presets/dsh-qq-bridge/skills");
   const compatiblePreset = next
     .replace(/\r\n/g, "\n")
-    .replace("__DSH_QQ_BRIDGE_SKILLS_DIR__", JSON.stringify(skillsDir))
+    .replace("__DSH_QQ_BRIDGE_SKILLS_DIR__", JSON.stringify(qqSkills))
     .replace(
       [
         "    - id: workflow-worker-thread",
@@ -789,6 +807,41 @@ await patch(
     console.log(`patched: ${qqPlugin}`);
   } else {
     console.log(`already patched: ${qqPlugin}`);
+  }
+}
+
+{
+  const source = await readFile(qqPlugin, "utf8");
+  const snippet = await readFile(qqScreenshotSnippet, "utf8");
+  let next = source;
+  if (!source.includes("bigfish_share_screenshot")) {
+    next = source
+      .replace(
+        "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);",
+        [
+          "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);",
+          "    const unregisterBigFishScreenshot = registerBigFishScreenshotTool(ctx, client, cfg, officialMode);",
+        ].join("\n"),
+      )
+      .replace(
+        "        unregisterBigFishFrames?.();",
+        [
+          "        unregisterBigFishFrames?.();",
+          "        unregisterBigFishScreenshot?.();",
+        ].join("\n"),
+      );
+    if (next === source) throw new Error(`screenshot registration target not found: ${qqPlugin}`);
+  }
+  const marker = "// BIGFISH_QQ_SHARE_SCREENSHOT_TOOL";
+  const markerIndex = next.indexOf(marker);
+  next = markerIndex >= 0
+    ? `${next.slice(0, markerIndex)}${snippet.trimEnd()}\n`
+    : `${next.trimEnd()}\n\n${snippet.trimEnd()}\n`;
+  if (next !== source) {
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`patched screenshot sharing: ${qqPlugin}`);
+  } else {
+    console.log(`already patched screenshot sharing: ${qqPlugin}`);
   }
 }
 

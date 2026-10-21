@@ -14,6 +14,8 @@ pnpm add -D @deepseek-ai/dsh@0.1.7-rc.2
 pnpm dsh:patch
 ```
 
+`pnpm dsh:patch` 会把仓库 `skills/` 下的项目 Skill 同步进 QQ preset，保证本地修改经过安装后真正进入运行时，而不是只留在仓库里。
+
 `bigfish017` 的插件：
 
 ```text
@@ -26,7 +28,7 @@ dsh-plugin-bilibili 0.2.1
 @deepseek-ai/dsh-experimental-computer-use-cua-driver-native 0.1.6-alpha.1
 ```
 
-QQ 群聊保留完整后台排查工具，不能因为查进程、日志或 ADB 就一直沉默。QQ Bridge 的 `agent.progress.messages` 配置会在没有正文输出时按时间发送进度；默认 20 秒、70 秒各一次，180 秒仍未完成则结束本轮并明确要求重新艾特。进度消息、间隔和超时都可在 profile 配置中调整。
+QQ 群聊保留完整后台排查工具，不能因为查进程、日志或 ADB 就一直沉默。当前 profile 关闭了固定的 `agent.progress.messages`，避免“我在翻后台”一类模板反复出现。长任务应在需要说明时结合正在查的具体内容自然回复；`agent.timeoutMs` 仍限制单轮时长。
 
 QQ 群聊模型使用已声明图片输入的 `deepseek-v4-flash-vision-exp`。收到 OneBot 图片段时，Bridge 会下载最多 6 张、单张不超过 12 MiB 的图片到 `data/qq-images`，把本地路径附加给 Agent；Agent 必须先调用 `read_image`，不能根据 `[图片]` 猜内容。
 
@@ -36,12 +38,10 @@ agent:
   timeoutMs: 180000
   timeoutMessage: 我这边卡住了，再艾特我一下
   progress:
-    messages:
-      - delayMs: 20000
-        text: 我在翻后台，稍等一下
-      - delayMs: 70000
-        text: 还在查，我没装死
+    messages: []
 ```
+
+`bigfish_share_screenshot` 是主人授权的直接截图工具。在白名单群的主人会话或主人私聊里，大肥鱼判断需要展示当前屏幕时可以直接调用；工具会截取在线 ADB 设备并发送到当前会话，不再弹二次确认。非主人请求、非白名单群和发往其他私聊的调用会被拒绝。
 
 `bigfish-worker` 的插件：
 
