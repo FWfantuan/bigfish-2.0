@@ -71,6 +71,48 @@ async function ensurePlayVisionCatalog() {
 
 await ensurePlayVisionCatalog();
 
+async function ensurePlayWebSearch() {
+  let source;
+  try {
+    source = await readFile(playProfilePatch, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      console.log(`play profile not installed, skipped web search: ${playProfilePatch}`);
+      return;
+    }
+    throw error;
+  }
+  if (source.includes("BIGFISH_PLAY_WEB_SEARCH")) {
+    console.log(`already patched: ${playProfilePatch}`);
+    return;
+  }
+  const block = [
+    "- id: tool-web",
+    "  disabled: true",
+  ].join("\n");
+  if (!source.includes(block)) {
+    throw new Error(`play profile web tool block not found: ${playProfilePatch}`);
+  }
+  await writeFile(
+    playProfilePatch,
+    source.replace(
+      block,
+      [
+        "# BIGFISH_PLAY_WEB_SEARCH: public search summaries are allowed; page fetches are not.",
+        "- id: tool-web",
+        "  disabled: false",
+        "  config:",
+        "    fetch: false",
+        "    searchTimeoutMs: 60000",
+      ].join("\n"),
+    ),
+    "utf8",
+  );
+  console.log(`patched: ${playProfilePatch}`);
+}
+
+await ensurePlayWebSearch();
+
 async function patch(path, marker, replace) {
   const source = await readFile(path, "utf8");
   if (source.includes(marker)) {

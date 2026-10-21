@@ -16,6 +16,8 @@ MuMu ADB device online
 
 The isolated `bigfish-play` profile contains Android ADB tools, but no shell, filesystem, web, subagent, or desktop-control tools. Approved desktop actions stay in the normal BigFish profile; the autonomous game worker can only touch the detected Android device.
 
+The game profile may use DeepSeek `web_search` without owner approval for public rules, terminology, UI meanings, and level guides. It receives search summaries only: webpage fetching, long-form guide reading, browser use, and video guides remain outside this profile.
+
 `deepseek-v4-flash-vision-exp` must be present in the profile's DeepSeek model catalog with `inputModalities: [text, image]`. `pnpm dsh:patch` installs that catalog declaration idempotently. This is required because the Android screenshot tool only returns a real model-visible image block when the active route declares image input.
 
 The worker starts at most one play decision per online emulator session. A 60-minute cooldown prevents repeated decisions while MuMu stays open. Taking MuMu offline clears the previous session timestamp, so closing and reopening the emulator gives BigFish a new opportunity to decide.
@@ -36,6 +38,7 @@ Forbidden actions are refused by the prompt and agent profile: purchase, recharg
     "decisionTimeoutMinutes": 10,
     "maxSessionMinutes": 12,
     "maxActions": 30,
+    "webSearch": true,
     "objective": "像自己真心想玩一样探索当前游戏，卡住或界面不确定就停。"
   },
   "targets": []

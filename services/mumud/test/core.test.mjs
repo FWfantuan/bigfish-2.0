@@ -124,6 +124,7 @@ test("gameplay prompt carries action limits, vision failure handling and safety 
     goalId: "goal-1",
   });
   assert.match(prompt, /最多进行 30 个有意义动作/);
+  assert.match(prompt, /web_search/);
   assert.match(prompt, /没有真正的 image 引用/);
   assert.match(prompt, /充值、购买、看广告/);
   assert.match(prompt, /goal-1/);

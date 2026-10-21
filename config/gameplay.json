@@ -11,6 +11,7 @@
     "decisionTimeoutMinutes": 10,
     "maxSessionMinutes": 12,
     "maxActions": 30,
+    "webSearch": true,
     "objective": "像自己真心想玩一样探索当前游戏，能玩就连续玩，卡住或界面不确定就停。",
     "forbiddenActions": [
       "充值",

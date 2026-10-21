@@ -171,6 +171,7 @@ async function chooseAndPlay(device, now) {
     objective: choice.objective || autonomy.objective,
     maxSessionMinutes: Number(autonomy.maxSessionMinutes || 12),
     maxActions: Number(autonomy.maxActions || 30),
+    webSearch: autonomy.webSearch !== false,
     forbiddenActions: autonomy.forbiddenActions || [],
   };
   state.running = true;
