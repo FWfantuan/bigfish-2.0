@@ -20,6 +20,8 @@ The isolated `bigfish-play` profile contains Android ADB tools, but no shell, fi
 
 The worker starts at most one play decision per online emulator session. A 60-minute cooldown prevents repeated decisions while MuMu stays open. Taking MuMu offline clears the previous session timestamp, so closing and reopening the emulator gives BigFish a new opportunity to decide.
 
+`pnpm dsh:patch` repairs the Android plugin's no-stream fallback by reading `SurfaceOrientation`, which prevents horizontal taps from drifting toward the upper-left on MuMu. If coordinates still drift, the play worker may call `android_boot` once to switch to the live landscape frame.
+
 If the game is missing, `mumud` keeps polling and reminds the owner at most once every six hours. Installing the game while MuMu stays online is enough for the next poll to detect it and begin a session.
 
 Forbidden actions are refused by the prompt and agent profile: purchase, recharge, rewarded ads, membership, account changes, data deletion, and trades. If the agent can identify one of those dialogs, it must stop.

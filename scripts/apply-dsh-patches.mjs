@@ -27,6 +27,9 @@ const playProfilePatch = resolve(
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
 );
+const androidHostPlugins = ["bigfish017", "bigfish-worker", "bigfish-play"].map((profile) =>
+  resolve(dshHome, `profiles/${profile}/node_modules/@zseven-w/dsh-android/lib/android-host.js`),
+);
 
 async function ensurePlayVisionCatalog() {
   let source;
@@ -78,6 +81,30 @@ async function patch(path, marker, replace) {
   if (next === source) throw new Error(`patch target not found: ${path}`);
   await writeFile(path, next, "utf8");
   console.log(`patched: ${path}`);
+}
+
+for (const androidHostPlugin of androidHostPlugins) {
+  await patch(
+    androidHostPlugin,
+    "BIGFISH_ROTATION_FALLBACK",
+    (source) =>
+      source.replace(
+        [
+          "        const size = await this.toolchain.screenSize(serial);",
+          "        return { x: Math.round(x * size.width), y: Math.round(y * size.height) };",
+        ].join("\n"),
+        [
+          "        // BIGFISH_ROTATION_FALLBACK: `wm size` is the natural portrait",
+          "        // panel size. Use the live SurfaceOrientation before mapping a",
+          "        // landscape frame, otherwise taps drift toward the top-left.",
+          "        const rotationOutput = await this.toolchain.shell(serial, ['dumpsys', 'input'], { timeoutMs: CONTROL_TIMEOUT_MS }).catch(() => '');",
+          "        const rotationMatch = rotationOutput.match(/SurfaceOrientation:\\s*([0-3])/m);",
+          "        const rotation = rotationMatch ? Number(rotationMatch[1]) : await this.getRotation(serial);",
+          "        const size = await this.inputSpace(serial, { rotation });",
+          "        return { x: Math.round(x * size.width), y: Math.round(y * size.height) };",
+        ].join("\n"),
+      ),
+  );
 }
 
 await patch(

@@ -24,7 +24,8 @@ export function parseDecisionText(text) {
 export class DshDecisionMaker {
   constructor(config) {
     this.config = config;
-    this.bin = existsSync(DSH_BIN) ? DSH_BIN : null;
+    const configuredBin = config.bin ? resolve(config.bin) : DSH_BIN;
+    this.bin = existsSync(configuredBin) ? configuredBin : null;
   }
 
   async decide({ prompt, sessionId, timeoutMs }) {
@@ -40,31 +41,57 @@ export class DshDecisionMaker {
     });
     let stdout = "";
     let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => (stdout += chunk));
-    child.stderr.on("data", (chunk) => (stderr += chunk));
-    const timer = setTimeout(() => child.kill(), timeoutMs);
-    const code = await new Promise((resolveCode) => child.on("close", resolveCode));
-    clearTimeout(timer);
-
+    let stdoutBuffer = "";
     let finalText = "";
     let discoveredSession = "";
     let errorMessage = "";
-    for (const line of stdout.split(/\r?\n/)) {
-      if (!line.trim().startsWith("{")) continue;
+    let finishedOnFinal = false;
+    let finalTimer = null;
+
+    const inspectLine = (line) => {
+      if (!line.trim().startsWith("{")) return;
       try {
         const event = JSON.parse(line);
         if (event.type === "session" && event.sessionId) discoveredSession = event.sessionId;
-        if (event.type === "final" && typeof event.text === "string") finalText = event.text;
+        if (event.type === "final" && typeof event.text === "string") {
+          finalText = event.text;
+          if (!finishedOnFinal) {
+            finishedOnFinal = true;
+            // Some tool plugins keep their process alive after the turn. The
+            // terminal `final` event is the completion signal; stop after a
+            // short flush instead of waiting for the full task timeout.
+            finalTimer = setTimeout(() => child.kill(), 250);
+          }
+        }
         if (event.type === "status" && event.reason?.kind === "error") {
           errorMessage = event.reason.error?.message || "unknown DSH error";
         }
       } catch {
-        // Ignore non-event output.
+        // Ignore non-event and partial output.
       }
+    };
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      stdoutBuffer += chunk;
+      for (let newline = stdoutBuffer.indexOf("\n"); newline >= 0; newline = stdoutBuffer.indexOf("\n")) {
+        const line = stdoutBuffer.slice(0, newline);
+        stdoutBuffer = stdoutBuffer.slice(newline + 1);
+        inspectLine(line);
+      }
+    });
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    const timer = setTimeout(() => child.kill(), timeoutMs);
+    const code = await new Promise((resolveCode) => child.on("close", resolveCode));
+    clearTimeout(timer);
+    if (finalTimer) clearTimeout(finalTimer);
+    if (stdoutBuffer.trim()) inspectLine(stdoutBuffer);
+
+    if ((!finishedOnFinal && code !== 0) || errorMessage) {
+      throw new Error(errorMessage || stderr.trim() || `DSH exited with ${code}`);
     }
-    if (code !== 0 || errorMessage) throw new Error(errorMessage || stderr.trim() || `DSH exited with ${code}`);
     return { decision: parseDecisionText(finalText || stdout), raw: finalText || stdout, sessionId: discoveredSession };
   }
 }
