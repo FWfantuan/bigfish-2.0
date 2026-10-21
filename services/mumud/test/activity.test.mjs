@@ -59,3 +59,25 @@ test("chain-of-thought is not copied into shared gameplay activity", () => {
   assert.equal(next.lastVisibleText, "公开阶段说明");
   assert.doesNotMatch(JSON.stringify(next), /private reasoning/);
 });
+
+test("live activity accepts the DSH command-line event protocol", () => {
+  let state = createLiveGameplayState({ groupId: "100", game: "明日方舟" });
+  state = applyLiveGameplayEvent(state, {
+    type: "tool_call",
+    callId: "cli-call",
+    tool: "arknights_press_ui",
+    input: { target: "pause_toggle" },
+  });
+  state = applyLiveGameplayEvent(state, {
+    type: "tool_result",
+    callId: "cli-call",
+    status: "completed",
+    result: "{\"sent\":true}",
+  });
+  state = applyLiveGameplayEvent(state, { type: "text", text: "公开阶段说明" });
+
+  assert.equal(state.current.tool, "arknights_press_ui");
+  assert.equal(state.current.status, "completed");
+  assert.equal(state.lastVisibleText, "公开阶段说明");
+  assert.equal(state.recentEvents.length, 2);
+});

@@ -39,8 +39,13 @@ export function applyLiveGameplayEvent(previous, event) {
   state.pendingTools ||= {};
   state.recentEvents ||= [];
 
-  const type = String(event?.type || "");
-  const data = event?.data || {};
+  const rawType = String(event?.type || "");
+  const type = rawType === "tool_call"
+    ? "tool/call"
+    : rawType === "tool_result"
+      ? "tool/result"
+      : rawType;
+  const data = event?.data && typeof event.data === "object" ? event.data : event || {};
 
   if (type === "session") {
     const sessionId = event.id || event.sessionId || data.sessionId;
@@ -49,9 +54,9 @@ export function applyLiveGameplayEvent(previous, event) {
   }
 
   if (type === "tool/call") {
-    const name = String(data.name || "");
+    const name = String(data.name || data.tool || "");
     if (!isLiveGameplayTool(name)) return state;
-    let args = data.arguments;
+    let args = data.arguments ?? data.input;
     if (typeof args === "string") {
       try {
         args = JSON.parse(args);
@@ -92,8 +97,8 @@ export function applyLiveGameplayEvent(previous, event) {
     const callId = String(data.toolCallId || data.callId || "");
     const pending = state.pendingTools[callId] || null;
     const name = pending?.name || state.current?.tool || "";
-    const isError = data.message?.isError === true;
-    const resultText = extractText(data.message?.content);
+    const isError = data.message?.isError === true || data.status === "failed" || data.status === "error";
+    const resultText = extractText(data.message?.content) || String(data.result || "").trim();
     const screenshotPath = extractScreenshotPath(data) || extractPathFromText(resultText);
     if (name && isLiveGameplayTool(name)) {
       state.current = {
@@ -131,6 +136,11 @@ export function applyLiveGameplayEvent(previous, event) {
           .trim()
       : "";
     if (visible) state.lastVisibleText = visible.slice(-2400);
+    return state;
+  }
+
+  if (rawType === "text" && typeof event.text === "string" && event.text.trim()) {
+    state.lastVisibleText = event.text.trim().slice(-2400);
     return state;
   }
 
