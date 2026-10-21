@@ -76,6 +76,11 @@ const runtimeStatus = {
     screenshotInputVerified: true,
     coordinateMapping: "rotation-aware",
     coordinateVerified: true,
+    arknightsActions: {
+      maaSingleStep: true,
+      deploymentWithPause: true,
+      semanticUiAnchors: true,
+    },
     webSearch: { enabled: autonomy.webSearch !== false, fetch: false },
     tesseractRequired: false,
     maa: {

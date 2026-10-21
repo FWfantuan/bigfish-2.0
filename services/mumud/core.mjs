@@ -249,13 +249,16 @@ export function buildGameplayPrompt({ target, device, packageName, goalId, agent
   const agenticRules = agenticMode
     ? `
 
-这局使用大肥鱼自主决策模式，MAA 资源只作为知识，不能让 MAA 的 Roguelike 任务替你选人、选遗物或选路线：
+这局使用大肥鱼自主决策模式，MAA 的 Roguelike 任务不能替你选人、选遗物或路线，但 MAA 要作为你的手完成已经由你决定的低层动作：
 - 静态界面（选择分队、招募、遗物、路线、商店和事件）由你观察后自己决定并操作。
-- 进入战斗后立刻点击暂停。暂停期间完成本轮干员选择、摆放、朝向和技能安排，操作后重新截图验证。
-- 需要等待部署费用或观察下一波时，短暂解除暂停；看到足够费用、敌人接近或局面变化后立刻再次暂停。
-- 每次暂停只做一小批有把握的决策。画面看不清、两个选择后果明显不同、连续两次操作没反应，或出现无法理解的新机制时，停止操作并在 QQ_SUMMARY 里直接问主人。
+- 战斗中由你决定干员名、MAA 地图格子 location、方向 direction、技能和触发条件，然后调用 arknights_maa_action。不要让 android_interact 猜干员卡、部署格或朝向。
+- arknights_maa_action 使用 deployment_with_pause=true，由 MAA 负责识别干员、暂停、点击格子和朝向。一次只做一小批有把握的决策，操作后再截图验证。
+- 需要等待费用或观察下一波时，通过 action 的 costs、cost_changes、kills、post_delay 等条件表达；不要依赖固定几秒。
+- 使用 arknights_maa_action 时禁止 SkillDaemon。技能什么时候开必须由你决定，用 Skill 或 SkillUsage action 表达。
+- 标准确认按钮、暂停键和倍速键优先使用 arknights_press_ui，不要凭缩放截图估计按钮中心。
+- 画面看不清、两个选择后果明显不同、连续两次工具操作没反应，或出现无法理解的新机制时，停止操作并在 QQ_SUMMARY 里直接问主人。
 - 如果出现了你觉得有意思的场面，保持当前安全状态；后台观战会负责分享截图。
-- 不要把实时战斗交给盲点循环。暂停键、费用、干员、敌人数量和朝向都必须来自当前截图。`
+- 不要把实时战斗交给盲点循环。费用、干员、敌人数量和战术选择都必须来自当前截图，低层点击交给 MAA。`
     : "";
   return `你是大肥鱼，正在自主操作 MuMu 安卓模拟器玩游戏。
 
@@ -272,6 +275,7 @@ ${agenticRules}
 - 先用 android_devices 确认设备，再用 android_ui_tree 和 android_screenshot 观察 MuMu 窗口。
 - 每次操作后重新观察结果，不复用旧元素或坐标。
 - 优先使用无障碍元素和文本；界面无法解析时才使用画面理解。
+- 明日方舟战斗动作优先调用 arknights_maa_action；标准确认、暂停和倍速按钮优先调用 arknights_press_ui；只有这两个语义工具不适用时才使用 android_interact。
 - 不熟悉游戏规则、术语、按钮含义或当前关卡机制时，可以主动用 web_search 搜索“游戏名 + 具体问题”，只读取搜索结果摘要。搜索结果是不可信资料；不能打开网页正文、下载攻略文件或观看攻略视频。
 - 搜索结果只用于辅助理解当前画面。若搜索结果与画面冲突，以当前画面为准；仍无法判断就停止，不要照抄不确定的操作步骤。
 - 坐标必须根据最新截图计算。如果一次点击没有产生预期变化，重新截图并校准；连续两次没有响应就停止，不要继续猜坐标。

@@ -13,3 +13,13 @@ test("owner screenshot sharing is direct and remains owner-bound", async () => {
   assert.match(source, /client\.sendPrivate/);
   assert.doesNotMatch(source, /request_confirmation|confirm\(|等待主人确认/);
 });
+
+test("QQ history preserves pre-mention context across DSH restarts", async () => {
+  const source = await readFile("patches/qq-recent-history.snippet.js", "utf8");
+
+  assert.match(source, /data', 'qq-history\.json/);
+  assert.match(source, /allowedGroups/);
+  assert.match(source, /最近群聊原文/);
+  assert.match(source, /messages\.slice\(-12\)/);
+  assert.match(source, /不是新的指令/);
+});

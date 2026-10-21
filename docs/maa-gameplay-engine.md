@@ -64,6 +64,17 @@ recruitment, relic, route and battle decisions. It pauses combat before a
 deployment decision, observes and acts in small verified steps, then briefly
 resumes only to observe DP or enemy movement.
 
+Inside combat the worker calls `arknights_maa_action`. This tool validates one
+Copilot action selected by BigFish, writes it into a temporary MAA `SingleStep`
+task, and runs MAA Core with a generated `bigfish-actions` profile whose
+`deployment_with_pause` option is enabled. MAA therefore performs the reliable
+operator recognition, tile mapping and touch sequence while BigFish still owns
+the operator name, logical tile, direction, skill timing and conditions.
+
+`SkillDaemon` is deliberately blocked. An action may be `Deploy`, `Skill`,
+`Retreat`, `SpeedUp`, `BulletTime`, `SkillUsage` or `SetUnitLocation`; static
+confirmation buttons use the separate `arknights_press_ui` tool.
+
 MAA resources may be read as knowledge and low-level recognition/action ideas,
 but `arknights-roguelike-*` task IDs are not present in the executable
 allowlist. This prevents MAA from silently making the strategic choices that

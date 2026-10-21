@@ -192,10 +192,12 @@ test("agentic roguelike prompt makes BigFish decide while paused", () => {
     packageName: "com.hypergryph.arknights",
     agenticMode: { id: "arknights-roguelike" },
   });
-  assert.match(prompt, /MAA 资源只作为知识/);
-  assert.match(prompt, /进入战斗后立刻点击暂停/);
+  assert.match(prompt, /MAA 要作为你的手/);
+  assert.match(prompt, /deployment_with_pause=true/);
+  assert.match(prompt, /arknights_maa_action/);
+  assert.match(prompt, /禁止 SkillDaemon/);
   assert.match(prompt, /自己决定并操作/);
-  assert.match(prompt, /连续两次操作没反应/);
+  assert.match(prompt, /连续两次工具操作没反应/);
   assert.match(prompt, /不要标题、编号、动作数清单、客服式总结/);
 });
 

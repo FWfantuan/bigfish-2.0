@@ -6,7 +6,10 @@ Arknights has two deliberately separate paths. Ordinary safe battles may use
 the user-local MAA `arknights-safe` task. Roguelike requests use the isolated
 vision worker as the decision maker: BigFish chooses the squad, recruitment,
 relics, route, deployment tiles, facing directions and skill plan. MAA's
-monolithic Roguelike tasks are not executable in this profile. See
+monolithic Roguelike tasks are not executable in this profile. During combat,
+the isolated worker calls `arknights_maa_action`; this creates a temporary MAA
+`SingleStep` task, uses MAA's tile mapping and recognition, and runs it with
+`deployment_with_pause=true`. See
 [MAA gameplay engine](maa-gameplay-engine.md).
 
 ```text
@@ -42,6 +45,8 @@ The QQ chat route can also call `bigfish_share_screenshot` directly. In an owner
 Named games can be mapped to their installed package in `gameAliases`. When an owner request exactly matches a configured alias and that package is installed, the worker starts it directly instead of spending another model turn deciding whether to play it. The autonomous choice path remains for open requests such as “随便玩”.
 
 `pnpm dsh:patch` repairs the Android plugin's no-stream fallback by reading `SurfaceOrientation`, which prevents horizontal taps from drifting toward the upper-left on MuMu. If coordinates still drift, the play worker may call `android_boot` once to switch to the live landscape frame.
+
+The same patch adds two semantic Arknights tools. `arknights_press_ui` presses fixed 16:9 UI anchors such as the recruitment confirmation button and verifies that the frame changed. `arknights_maa_action` accepts one BigFish-chosen battle action and submits it to MAA Core as a validated `SingleStep` task. The tool rejects `SkillDaemon`, arbitrary strategy tasks, purchases and account actions.
 
 If the game is missing, `mumud` keeps polling and reminds the owner at most once every six hours. Installing the game while MuMu stays online is enough for the next poll to detect it and begin a session.
 

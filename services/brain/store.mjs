@@ -315,6 +315,18 @@ export class BrainStore {
       .map((row) => ({ ...row, content: json(row.content_json, {}), success: Boolean(row.success) }));
   }
 
+  recentActions(scope, limit = 12) {
+    return this.db.prepare("SELECT * FROM actions WHERE scope=? ORDER BY created_at DESC LIMIT ?")
+      .all(scope, limit)
+      .map((row) => ({
+        kind: row.kind,
+        payload: json(row.payload_json, {}),
+        result: row.result,
+        success: Boolean(row.success),
+        createdAt: row.created_at,
+      }));
+  }
+
   unreflected(scope, eventLimit = 80, actionLimit = 80) {
     const events = this.db.prepare("SELECT * FROM events WHERE scope=? AND reflected=0 ORDER BY created_at LIMIT ?")
       .all(scope, eventLimit)
@@ -429,6 +441,7 @@ export class BrainStore {
       goals: this.goals(scope),
       facts: this.facts(scope),
       recentEvents: this.recentEvents(scope, 12),
+      recentActions: this.recentActions(scope, 12),
       reflections: this.reflections(scope, 5).map(({ summary, lessons, created_at }) => ({ summary, lessons, createdAt: created_at })),
       skills: this.skills(scope),
       approvals: this.approvals(scope, "pending"),
