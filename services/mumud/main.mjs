@@ -20,6 +20,13 @@ import {
   sessionGate,
   validateGameplayRequest,
 } from "./core.mjs";
+import {
+  buildMaaQqSummary,
+  isSupportedMaaResolution,
+  MaaRunner,
+  parseAndroidDisplaySize,
+  resolveMaaTask,
+} from "./maa.mjs";
 
 const execFileAsync = promisify(execFile);
 await loadEnvironmentFiles([".env", resolve(homedir(), ".dsh/.env")]);
@@ -41,6 +48,12 @@ const brain = new BrainClient();
 const playDsh = new DshDecisionMaker({ profile: "bigfish-play", timeoutMs: 900000 });
 const explicitTarget = gameConfig.targets?.[0];
 const autonomy = gameConfig.autonomy || { enabled: false };
+const maaConfig = gameConfig.maa || { enabled: false };
+const maaRunner = new MaaRunner(maaConfig);
+let maaProbe = {
+  available: false,
+  reason: maaConfig.enabled === false ? "disabled" : "not-probed",
+};
 const runtimeStatus = {
   version: 1,
   updatedAt: new Date().toISOString(),
@@ -58,6 +71,11 @@ const runtimeStatus = {
     coordinateVerified: true,
     webSearch: { enabled: autonomy.webSearch !== false, fetch: false },
     tesseractRequired: false,
+    maa: {
+      enabled: maaConfig.enabled !== false,
+      status: "not-probed",
+      safeTasks: maaConfig.taskAllowlist || [],
+    },
   },
   explanation:
     "QQ 聊天层和 bigfish-play 游戏层都使用视觉模型；QQ 图片会先保存到本地，Android 截图可作为图像输入。旧版“图像输入未接通/OCR 缺失/坐标漂移”的结论已被当前修复取代。",
@@ -283,6 +301,18 @@ async function playChosenGame({
       : target.objective,
     1,
   ).catch(() => null);
+  const maaTask = resolveMaaTask(packageName, maaConfig);
+  if (maaTask) {
+    const maaOutcome = await playWithMaa({
+      device,
+      packageName,
+      target,
+      goal,
+      task: maaTask,
+      selectionReason,
+    });
+    if (maaOutcome.handled) return;
+  }
   const prompt = buildGameplayPrompt({ target, device, packageName, goalId: goal?.id });
   const result = await playDsh.decide({
     prompt,
@@ -299,6 +329,7 @@ async function playChosenGame({
   }, summary, true).catch(() => null);
   runtimeStatus.currentTarget = null;
   runtimeStatus.lastSession = {
+    engine: "bigfish-play",
     game: target.name,
     packageName,
     summary,
@@ -309,13 +340,163 @@ async function playChosenGame({
   await notify(extractGameplayQqSummary(summary));
 }
 
+async function playWithMaa({ device, packageName, target, goal, task, selectionReason }) {
+  const scope = brainScope();
+  const allowlist = maaConfig.taskAllowlist || [];
+  if (!allowlist.includes(task)) {
+    const error = `MAA task ${task} is not in the configured allowlist`;
+    log(error);
+    return { handled: false, error };
+  }
+
+  maaProbe = await maaRunner.probe();
+  runtimeStatus.capabilities.maa = {
+    enabled: true,
+    status: maaProbe.available ? "ready" : "unavailable",
+    cliVersion: maaProbe.cliVersion || null,
+    coreVersion: maaProbe.coreVersion || null,
+    reason: maaProbe.reason,
+    safeTasks: allowlist,
+  };
+  await saveStatus();
+  if (!maaProbe.available) {
+    const error = maaProbe.error || maaProbe.reason;
+    await brain.action(scope, "autonomous_game_engine", {
+      engine: "maa",
+      game: target.name,
+      packageName,
+      phase: "preflight",
+      probe: maaProbe,
+    }, `MAA 前置检查失败：${error}`, false).catch(() => null);
+    if (maaConfig.fallbackOnPreflightFailure !== false) {
+      log(`MAA preflight failed; using bigfish-play: ${error}`);
+      return { handled: false, error };
+    }
+    const result = { ok: false, phase: "preflight", error };
+    const qqSummary = buildMaaQqSummary({ game: target.name, result });
+    runtimeStatus.currentTarget = null;
+    runtimeStatus.lastSession = {
+      engine: "maa",
+      game: target.name,
+      packageName,
+      ok: false,
+      error,
+      qqSummary,
+      completedAt: new Date().toISOString(),
+    };
+    await saveStatus();
+    await notify(qqSummary);
+    return { handled: true, result };
+  }
+
+  const displayOutput = await adbRun(device, ["shell", "wm", "size"]).catch(() => "");
+  const display = parseAndroidDisplaySize(displayOutput);
+  const supported = isSupportedMaaResolution(display, maaConfig.supportedResolutions);
+  runtimeStatus.capabilities.maa.display = display;
+  runtimeStatus.capabilities.maa.resolutionSupported = supported;
+  await saveStatus();
+  if (!supported) {
+    const size = display ? `${display.width}x${display.height}` : "未知";
+    const error = `MuMu 当前分辨率 ${size} 不是 MAA 支持的横屏 1280x720/1920x1080`;
+    await brain.action(scope, "autonomous_game_engine", {
+      engine: "maa",
+      game: target.name,
+      packageName,
+      phase: "preflight",
+      display,
+    }, error, false).catch(() => null);
+    if (maaConfig.fallbackOnPreflightFailure !== false) {
+      log(`MAA resolution check failed; using bigfish-play: ${error}`);
+      return { handled: false, error };
+    }
+    const result = { ok: false, phase: "preflight", error };
+    const qqSummary = buildMaaQqSummary({ game: target.name, result });
+    runtimeStatus.currentTarget = null;
+    runtimeStatus.lastSession = {
+      engine: "maa",
+      game: target.name,
+      packageName,
+      ok: false,
+      error,
+      qqSummary,
+      completedAt: new Date().toISOString(),
+    };
+    await saveStatus();
+    await notify(qqSummary);
+    return { handled: true, result };
+  }
+
+  await notify("这局让 MAA 接一下手，我只放了一个安全任务：打一把，不动药和石头。");
+  const result = await maaRunner.run({
+    task,
+    address: device,
+    timeoutMs: Number(maaConfig.maxRuntimeMinutes || 20) * 60_000,
+  });
+  const factualSummary = result.ok
+    ? [
+        `MAA completed task ${task} for ${target.name} (${packageName}).`,
+        `MAA CLI ${result.cliVersion || "unknown"}, core ${result.coreVersion || "unknown"}.`,
+        `Completed task chains: ${result.completed?.map((item) => item.name).join(", ") || "none reported"}.`,
+        result.battles?.length ? `Battle output: ${result.battles.join(" | ")}` : "",
+      ].filter(Boolean).join("\n")
+    : [
+        `MAA task ${task} failed during ${result.phase || "execution"}.`,
+        result.error || "",
+        result.outputTail ? `Output tail:\n${result.outputTail}` : "",
+      ].filter(Boolean).join("\n");
+  await brain.action(scope, "autonomous_game_session", {
+    engine: "maa",
+    game: target.name,
+    packageName,
+    device,
+    goalId: goal?.id,
+    selectionReason,
+    task,
+    phase: result.phase,
+    ok: result.ok,
+    logFile: result.logFile,
+  }, factualSummary, true).catch(() => null);
+
+  const qqSummary = buildMaaQqSummary({ game: target.name, result });
+  runtimeStatus.currentTarget = null;
+  runtimeStatus.lastSession = {
+    engine: "maa",
+    game: target.name,
+    packageName,
+    task,
+    ok: result.ok,
+    completedTasks: result.completedTasks || 0,
+    error: result.error || null,
+    logFile: result.logFile || null,
+    summary: factualSummary,
+    qqSummary,
+    completedAt: new Date().toISOString(),
+  };
+  await saveStatus();
+  await notify(qqSummary);
+  return { handled: true, result };
+}
+
 function brainScope() {
   return `group:${notifyGroup}`;
 }
 
 async function publishRuntimeCapabilities() {
+  maaProbe = await maaRunner.probe().catch((error) => ({
+    available: false,
+    reason: "probe-failed",
+    error: error.message,
+  }));
+  runtimeStatus.capabilities.maa = {
+    enabled: maaConfig.enabled !== false,
+    status: maaProbe.available ? "ready" : "unavailable",
+    cliVersion: maaProbe.cliVersion || null,
+    coreVersion: maaProbe.coreVersion || null,
+    reason: maaProbe.reason,
+    safeTasks: maaConfig.taskAllowlist || [],
+  };
   await saveStatus();
-  const fact = "能力状态以 data/mumud/status.json 为准：QQ 聊天层和 bigfish-play 自动游戏层均使用 deepseek-v4-flash-vision-exp。QQ 用户图片会保存到 data/qq-images，Android 截图也已验证为真实图像输入。横屏点击坐标按 SurfaceOrientation 修复，登录按钮与主界面导航已实测；公开攻略 web_search 已启用且 fetch=false，Tesseract 不是必需。旧结论“QQ 文本模型读不了图”“图像输入未接通”“Unity 黑屏”“坐标偏移未解决”均已被当前能力修复取代。";
+  const fact = `能力状态以 data/mumud/status.json 为准：QQ 聊天层和 bigfish-play 自动游戏层均使用 deepseek-v4-flash-vision-exp。MAA 引擎状态为 ${runtimeStatus.capabilities.maa.status}${maaProbe.coreVersion ? `，MaaCore ${maaProbe.coreVersion}` : ""}，只开放安全任务 ${(maaConfig.taskAllowlist || []).join("、") || "无"}。QQ 用户图片会保存到 data/qq-images，Android 截图也已验证为真实图像输入。横屏点击坐标按 SurfaceOrientation 修复；公开攻略 web_search 已启用且 fetch=false，Tesseract 不是必需。旧结论“QQ 文本模型读不了图”“图像输入未接通”“Unity 黑屏”“坐标偏移未解决”均已被当前能力修复取代。`;
   await brain.replaceFacts(brainScope(), "verified_runtime_capability", [{
     text: fact,
     confidence: 1,
@@ -331,7 +512,7 @@ async function retireSupersededGameGoals(scope) {
     if (/自主玩 明日方舟$/.test(goal.title || "")) {
       await brain.updateGoal(goal.id, {
         detail:
-          "当前能力已验证：bigfish-play 能读取 MuMu 实机截图，横屏坐标已修复，并且已经进入明日方舟主界面、打开过干员列表。下次继续时先看当前画面，再决定是否继续找夜烟；不抽卡、不进采购中心、不买皮肤、不充值，看不清就停。",
+          "明日方舟优先交给 MAA 的安全任务 arknights-safe：识别当前界面后自动打一把，medicine=0、stone=0、times=1。MAA 前置检查失败时才由视觉模型接管；两套引擎都不能进入商店、抽卡、买皮肤或充值。",
       }).catch(() => null);
       continue;
     }

@@ -28,5 +28,22 @@
       "交易"
     ]
   },
+  "maa": {
+    "enabled": true,
+    "profile": "runtime",
+    "adbPath": "${ADB}",
+    "maxRuntimeMinutes": 20,
+    "taskAllowlist": [
+      "arknights-safe"
+    ],
+    "safeTasks": {
+      "com.hypergryph.arknights": "arknights-safe"
+    },
+    "supportedResolutions": [
+      [1280, 720],
+      [1920, 1080]
+    ],
+    "fallbackOnPreflightFailure": true
+  },
   "targets": []
 }

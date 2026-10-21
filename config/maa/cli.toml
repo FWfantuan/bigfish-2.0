@@ -1,0 +1,20 @@
+[core]
+channel = "Stable"
+test_time = 0
+
+[core.components]
+library = false
+resource = false
+
+[cli]
+channel = "Stable"
+
+[cli.components]
+binary = false
+
+[resource]
+auto_update = false
+warn_on_update_failure = true
+
+[hot_update]
+check_interval = 86400

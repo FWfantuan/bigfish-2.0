@@ -3,6 +3,7 @@ __pycache__/
 *.sqlite3
 .venv/
 .env
+config/maa/profiles/runtime.toml
 node_modules/
 work/
 data/

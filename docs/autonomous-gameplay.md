@@ -2,6 +2,11 @@
 
 `services/mumud` watches the MuMu ADB device. After MuMu becomes available, BigFish can inspect the device and decide for itself whether and what to play. No game is prescribed when `targets` is empty and autonomous choice is enabled.
 
+Arknights first tries the user-local MAA engine through a fixed safe task. MAA
+provides the fixed-resolution recognition and state/action graph; the isolated
+vision worker remains the fallback when MAA is unavailable. See
+[MAA gameplay engine](maa-gameplay-engine.md).
+
 ```text
 MuMu ADB device online
   → load Brain mood, goals, facts, skills and reflections

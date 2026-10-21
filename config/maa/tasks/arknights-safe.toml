@@ -1,0 +1,26 @@
+# This task is intentionally small. BigFish may choose whether to play, but it
+# cannot turn this file into a shopping, recruitment, gacha, or account task.
+
+[[tasks]]
+name = "Open Arknights"
+type = "StartUp"
+
+[tasks.params]
+client_type = "Official"
+start_game_enabled = true
+
+[[tasks]]
+name = "Play one safe battle"
+type = "Fight"
+
+[tasks.params]
+stage = ""
+medicine = 0
+medicine_expire_days = 0
+stone = 0
+times = 1
+series = 1
+report_to_penguin = false
+report_to_yituliu = false
+client_type = "Official"
+DrGrandet = false
