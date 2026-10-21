@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 import { loadConfig } from "./config.mjs";
 import { DshDecisionMaker, loadEnvironmentFiles } from "./dsh.mjs";
 import { OneBotConnection } from "./onebot.mjs";
@@ -16,6 +17,7 @@ import { BrainClient } from "../shared/brain-client.mjs";
 await loadEnvironmentFiles([".env", resolve(homedir(), ".dsh/.env")]);
 const config = await loadConfig(process.env.BIGFISH_SOCIAL_CONFIG || "config/social.json");
 const state = new SocialState(process.env.BIGFISH_STATE_PATH || "data/social/state.json");
+const gameplayStatePath = resolve(process.env.BIGFISH_GAMEPLAY_STATE || "data/mumud/state.json");
 await state.load();
 const dsh = new DshDecisionMaker(config.dsh);
 const brain = new BrainClient();
@@ -63,12 +65,14 @@ async function evaluateGroup(groupId) {
     const recentSenderIds = new Set(ambientMessages.slice(-40).map((item) => item.senderId));
     const scope = `group:${groupId}`;
     const brainContext = await brain.context(scope).catch(() => null);
+    const gameplayPaused = await isGameplayPaused();
     const prompt = buildPrompt({
       config,
       state: state.value,
       groupId,
       brainContext,
       messages: ambientMessages,
+      gameplayPaused,
     });
     const result = await dsh.decide({ prompt, sessionId: group.sessionId, timeoutMs: config.dsh.timeoutMs });
     if (result.sessionId) group.sessionId = result.sessionId;
@@ -80,7 +84,13 @@ async function evaluateGroup(groupId) {
       return;
     }
 
-    const verdict = validateDecision(decision, { config, groupId, state: state.value, recentSenderIds });
+    const verdict = validateDecision(decision, {
+      config,
+      groupId,
+      state: state.value,
+      recentSenderIds,
+      gameplayPaused,
+    });
     if (!verdict.ok) {
       log(`group=${groupId} action blocked: ${verdict.reason}`);
       group.nextCheckAt = Date.now() + config.evaluation.heartbeatMs;
@@ -151,6 +161,15 @@ async function evaluateGroup(groupId) {
     await state.save();
   } finally {
     evaluating.delete(groupId);
+  }
+}
+
+async function isGameplayPaused() {
+  try {
+    const gameplayState = JSON.parse(await readFile(gameplayStatePath, "utf8"));
+    return gameplayState.autonomyPaused === true;
+  } catch {
+    return false;
   }
 }
 

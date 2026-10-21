@@ -124,6 +124,57 @@ test("tool requests may only mention the owner", () => {
   assert.equal(verdict.reason, "tool-request-owner-only");
 });
 
+test("paused gameplay blocks proactive game mentions and Android requests", () => {
+  const contexts = [
+    normalizeDecision({
+      action: "group_message",
+      target_group: "100",
+      at_qq: "1",
+      message: "主人，我再去开一局肉鸽吧",
+      reason: "旧游戏目标仍在",
+    }),
+    normalizeDecision({
+      action: "request_tool",
+      target_group: "100",
+      at_qq: "1",
+      tool_domain: "android",
+      message: "我想再上 MuMu 看看",
+      reason: "旧游戏目标仍在",
+    }),
+  ];
+  for (const decision of contexts) {
+    const verdict = validateDecision(decision, {
+      config,
+      groupId: "100",
+      state: baseState(),
+      recentSenderIds: new Set(["1"]),
+      gameplayPaused: true,
+      now: new Date(2026, 0, 1, 12, 0),
+    });
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.reason, "gameplay-paused");
+  }
+});
+
+test("paused gameplay still permits unrelated group conversation", () => {
+  const decision = normalizeDecision({
+    action: "group_message",
+    target_group: "100",
+    at_qq: "2",
+    message: "你刚说的那顿饭听着还挺香",
+    reason: "群友正在聊晚饭",
+  });
+  const verdict = validateDecision(decision, {
+    config,
+    groupId: "100",
+    state: baseState(),
+    recentSenderIds: new Set(["2"]),
+    gameplayPaused: true,
+    now: new Date(2026, 0, 1, 12, 0),
+  });
+  assert.equal(verdict.ok, true);
+});
+
 test("direct bot mentions are excluded from proactive decisions", () => {
   const direct = {
     text: "@机器人 等啥呢，还不进去",

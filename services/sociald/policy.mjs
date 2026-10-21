@@ -1,5 +1,6 @@
 const ACTIONS = new Set(["wait", "group_message", "request_tool"]);
 const TOOL_DOMAINS = new Set(["bilibili", "browser", "computer", "android", "general"]);
+const GAMEPLAY_MESSAGE = /(明日方舟|肉鸽|界园|黑流树海|开游戏|进游戏|玩游戏|打一局|游戏权限|MAA)/i;
 
 export function isDirectBotMention(message, botQQ) {
   const bot = String(botQQ || "").trim();
@@ -41,13 +42,29 @@ export function isQuietHour(date, evaluation) {
 }
 
 export function validateDecision(decision, context) {
-  const { config, now = new Date(), groupId, state, recentSenderIds = new Set() } = context;
+  const {
+    config,
+    now = new Date(),
+    groupId,
+    state,
+    recentSenderIds = new Set(),
+    gameplayPaused = false,
+  } = context;
   const evaluation = config.evaluation;
   if (!decision) return { ok: true, decision: { action: "wait", reason: "invalid decision" } };
   if (decision.action === "wait") return { ok: true, decision };
   if (isQuietHour(now, evaluation)) return { ok: false, reason: "quiet-hours" };
   if (!decision.message) return { ok: false, reason: "empty-message" };
   if (decision.message.length > evaluation.maxMessageChars) return { ok: false, reason: "message-too-long" };
+  if (
+    gameplayPaused
+    && (
+      GAMEPLAY_MESSAGE.test(decision.message)
+      || (decision.action === "request_tool" && decision.toolDomain === "android")
+    )
+  ) {
+    return { ok: false, reason: "gameplay-paused" };
+  }
 
   const timestamp = now.getTime();
   const globalLast = Math.max(0, ...state.actions.map((item) => item.at || 0));

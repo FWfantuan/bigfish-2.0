@@ -155,6 +155,10 @@ connection.connect();
 const timer = setInterval(() => void poll(), gameConfig.pollMs || 5000);
 const controlTimer = setInterval(() => void handleGameplayStopRequest(), 1000);
 await handleGameplayStopRequest();
+if (state.autonomyPaused === true) {
+  const retiredGoals = await retireActiveGameplayGoals();
+  if (retiredGoals > 0) log(`retired ${retiredGoals} stale gameplay goal(s) while autonomy is paused`);
+}
 void poll();
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
@@ -277,6 +281,9 @@ async function poll() {
       liveGameplayState.phase = state.autonomyPaused === true ? "stopped" : "idle";
       liveGameplayState.updatedAt = new Date().toISOString();
       scheduleLiveGameplaySave();
+    }
+    if (state.activeSession?.goalId) {
+      await completeGameplayGoal(state.activeSession.goalId);
     }
     state.running = false;
     state.activeGroupId = "";
@@ -530,6 +537,7 @@ async function playChosenGame({
     goalId: goal?.id,
     selectionReason,
   }, summary, true).catch(() => null);
+  await completeGameplayGoal(goal?.id);
   if (liveGameplayState) {
     liveGameplayState.active = false;
     liveGameplayState.phase = "completed";
@@ -724,6 +732,7 @@ async function playWithMaa({
     logFile: result.logFile,
     learningRecord,
   }, factualSummary, learningRecord.meaningful !== false).catch(() => null);
+  await completeGameplayGoal(goal?.id);
 
   const qqSummary = await composeGameplayMessage({
     event: result.ok
@@ -874,6 +883,30 @@ async function retireSupersededGameGoals(scope) {
       detail: `${goal.detail}\n[已由当前能力修复取代：视觉输入、坐标映射和游戏层/聊天层区分均已验证]`,
     }).catch(() => null);
   }
+}
+
+async function completeGameplayGoal(goalId) {
+  if (!goalId) return false;
+  const updated = await brain.updateGoal(goalId, { status: "completed" }).catch(() => null);
+  return Boolean(updated);
+}
+
+async function retireActiveGameplayGoals(groupIds = allowedGroups) {
+  let retired = 0;
+  for (const groupId of [...new Set(groupIds.map(String))]) {
+    const scope = brainScope(groupId);
+    const context = await brain.context(scope).catch(() => null);
+    for (const goal of context?.goals || []) {
+      if (!/^自主玩|^等待主人批准：android/.test(String(goal.title || ""))) continue;
+      if (!await completeGameplayGoal(goal.id)) continue;
+      retired += 1;
+      await brain.observe(scope, "gameplay_goal_retired", {
+        goalId: goal.id,
+        title: goal.title,
+      }, "owner paused autonomous gameplay; stale game goal closed", true).catch(() => null);
+    }
+  }
+  return retired;
 }
 
 async function saveStatus() {
@@ -1319,13 +1352,16 @@ async function handleGameplayStopRequest() {
   }
   await saveState();
   await flushLiveGameplayState();
+  const retiredGoals = await retireActiveGameplayGoals();
   await brain.observe(
     brainScope(String(request.groupId)),
     "owner_gameplay_stop",
     { reason: request.reason || "", packageName },
     true,
   ).catch(() => null);
-  log(`gameplay stopped and autonomy paused by owner in group=${request.groupId}`);
+  log(
+    `gameplay stopped and autonomy paused by owner in group=${request.groupId}; retiredGoals=${retiredGoals}`,
+  );
 }
 
 function recordGameplayActivity(event, scope) {

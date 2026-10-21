@@ -22,8 +22,12 @@ controller.
 `bigfish_stop_gameplay` is an owner-only control plane. It removes a pending
 gameplay request, asks `mumud` to cancel the play agent process tree, force-stops
 the active game package, and persists `autonomyPaused=true` in the shared state.
-That flag survives supervisor and `mumud` restarts. Only a later authenticated
-owner gameplay request clears it and allows a new game.
+Stopping also closes every stale `自主玩` goal across the whitelisted groups, so
+the independent proactive-social loops cannot revive a stopped game from old
+Brain context. While autonomy is paused, `sociald` rejects proactive game
+messages and Android/MuMu requests. That flag survives supervisor and `mumud`
+restarts. Only a later authenticated owner gameplay request clears it and
+allows a new game.
 
 This preserves the useful split between responsive chat and background action
 while removing the experience split: both workers describe the same current

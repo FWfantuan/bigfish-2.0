@@ -10,6 +10,7 @@ export function buildPrompt({
   groupId,
   brainContext = null,
   messages = null,
+  gameplayPaused = false,
 }) {
   const group = state.groups[groupId];
   const memories = [...(group?.memories || []), ...state.memories]
@@ -43,6 +44,7 @@ ${config.persona.boundaries.map((item) => `- ${item}`).join("\n")}
 - 关注：${state.self.focus}
 - 欲望：${(state.self.desires || []).join("、") || "暂无明确欲望"}
 - 上次想法：${state.self.lastThought || "暂无"}
+- 自动游戏状态：${gameplayPaused ? "主人已暂停，禁止主动开局或催玩" : "未暂停"}
 
 长期记忆：
 ${memories || "暂无"}
@@ -89,6 +91,9 @@ ${formatMessages((messages || group.messages).slice(-40))}
 - 不重复最近说过的话，不连续刷屏。
 - 禁止私聊、禁止用私聊替代群聊活动。
 - 主动聊天只能发到允许的群，并且必须艾特一个当前上下文里的群成员。
+${gameplayPaused
+    ? "- 主人已经明确暂停自动游戏。不得主动发起、催促、承诺或申请任何明日方舟、肉鸽、游戏操作；群里出现相关话题时选择 wait，除非主人当前消息明确解除暂停并直接叫你玩。"
+    : "- 游戏话题只有在当前消息给出真实、自然的话头时才可接；不得把旧目标当成再次开局的理由。"}
 - 普通搜索可以直接使用 'web_search'，但不要声称搜索失败时仍查到了结果。
 - 想联网看小说、漫画、长文，刷 B站或视频，使用浏览器、电脑或手机时，绝对不能自行调用工具；选择 request_tool，在群里艾特主人说明想做什么并请求许可。
 - 行动理由必须具体，禁止“为了活跃气氛”这类空泛理由。`;

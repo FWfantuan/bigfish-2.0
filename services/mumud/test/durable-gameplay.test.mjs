@@ -26,6 +26,8 @@ test("gameplay final reports and strategic questions are wired to screenshots", 
   assert.match(main, /stop\.request\.json/);
   assert.match(main, /handleGameplayStopRequest/);
   assert.match(main, /autonomyPaused/);
+  assert.match(main, /retireActiveGameplayGoals/);
+  assert.match(main, /gameplay_goal_retired/);
   assert.match(main, /activePlayAbortController/);
   assert.match(main, /composeGameplayMessage/);
   assert.match(main, /profile: "bigfish-social"/);
