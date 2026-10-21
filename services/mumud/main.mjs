@@ -47,6 +47,7 @@ const statePath = resolve(process.env.BIGFISH_GAMEPLAY_STATE || "data/mumud/stat
 const statusPath = resolve(process.env.BIGFISH_GAMEPLAY_STATUS || "data/mumud/status.json");
 const requestPath = resolve(process.env.BIGFISH_GAMEPLAY_REQUEST || "data/mumud/request.json");
 const liveStatePath = resolve(process.env.BIGFISH_GAMEPLAY_LIVE || "data/mumud/live.json");
+const stopRequestPath = resolve("data/mumud/stop.request.json");
 const questionRequestPath = resolve("data/mumud/question.request.json");
 const questionActivePath = resolve("data/mumud/question.active.json");
 const questionAnswerPath = resolve("data/mumud/question.answer.json");
@@ -134,6 +135,7 @@ let connection;
 let polling = false;
 let stopping = false;
 let interruptedSessionReported = false;
+let activePlayAbortController = null;
 
 connection = new OneBotConnection({
   url: chatConfig.onebot.url,
@@ -151,6 +153,8 @@ connection = new OneBotConnection({
 connection.connect();
 
 const timer = setInterval(() => void poll(), gameConfig.pollMs || 5000);
+const controlTimer = setInterval(() => void handleGameplayStopRequest(), 1000);
+await handleGameplayStopRequest();
 void poll();
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
@@ -164,10 +168,26 @@ async function poll() {
   polling = true;
   let device = "";
   let activeGroupId = notifyGroup;
+  let ownerRequest = null;
   try {
+    ownerRequest = await consumeGameplayRequest(allowedGroups);
+    if (ownerRequest) {
+      activeGroupId = String(ownerRequest.groupId);
+      state.autonomyPaused = false;
+      state.autonomyPausedAt = null;
+      state.autonomyPauseReason = "";
+      state.lastSessionAt = 0;
+      runtimeStatus.lastRequest = ownerRequest;
+      await saveStatus();
+      await brain.observe(brainScope(activeGroupId), "owner_game_request", ownerRequest, true).catch(() => null);
+      log(`owner gameplay request: ${ownerRequest.game || "self-selected"}`);
+    } else if (state.autonomyPaused === true) {
+      await saveState();
+      return;
+    }
     device = (await listDevices())[0];
     if (!device) {
-      const ownerRequestWaiting = await hasFreshGameplayRequest(allowedGroups);
+      const ownerRequestWaiting = Boolean(ownerRequest);
       let info = await managerInfo();
       if (!info?.is_android_started && (gameConfig.autoLaunchEmulator || ownerRequestWaiting)) {
         await run(manager, ["control", "-v", "0", "launch"]).catch(() => "");
@@ -186,15 +206,6 @@ async function poll() {
       return;
     }
     const now = Date.now();
-    const ownerRequest = await consumeGameplayRequest(allowedGroups);
-    if (ownerRequest) {
-      activeGroupId = String(ownerRequest.groupId);
-      state.lastSessionAt = 0;
-      runtimeStatus.lastRequest = ownerRequest;
-      await saveStatus();
-      await brain.observe(brainScope(activeGroupId), "owner_game_request", ownerRequest, true).catch(() => null);
-      log(`owner gameplay request: ${ownerRequest.game || "self-selected"}`);
-    }
     const gate = ownerRequest ? { allowed: true, reason: "owner-request", remainingMs: 0 }
       : sessionGate(state, now, gameConfig.cooldownMinutes);
     if (!gate.allowed) {
@@ -240,7 +251,7 @@ async function poll() {
     await chooseAndPlay(device, now, ownerRequest);
   } catch (error) {
     log(`poll failed: ${error.message}`);
-    if (state.running) {
+    if (state.running && state.autonomyPaused !== true) {
       if (device) {
         const errorSummary = await composeGameplayMessage({
           event: "游戏中途发生错误，这一局已经停止",
@@ -263,7 +274,7 @@ async function poll() {
   } finally {
     if (liveGameplayState?.active) {
       liveGameplayState.active = false;
-      liveGameplayState.phase = "idle";
+      liveGameplayState.phase = state.autonomyPaused === true ? "stopped" : "idle";
       liveGameplayState.updatedAt = new Date().toISOString();
       scheduleLiveGameplaySave();
     }
@@ -491,14 +502,17 @@ async function playChosenGame({
     groupId: finalGroupId,
   });
   let result;
+  activePlayAbortController = new AbortController();
   try {
     result = await playDsh.decide({
       prompt,
       sessionId,
       timeoutMs: activeTarget.maxSessionMinutes * 60000,
       onEvent: (event) => recordGameplayActivity(event, scope),
+      signal: activePlayAbortController.signal,
     });
   } finally {
+    activePlayAbortController = null;
     await Promise.all([stopObserver(), stopQuestionBridge()]);
   }
   const summary = String(result.raw || "").trim().slice(0, 3000);
@@ -1201,6 +1215,9 @@ async function beginActiveSession({
   engine = "bigfish-play",
 }) {
   state.running = true;
+  state.autonomyPaused = false;
+  state.autonomyPausedAt = null;
+  state.autonomyPauseReason = "";
   state.activeGroupId = String(groupId);
   state.activeSession = {
     groupId: String(groupId),
@@ -1245,6 +1262,70 @@ async function updateActiveSession(update) {
     scheduleLiveGameplaySave();
   }
   await saveState();
+}
+
+async function handleGameplayStopRequest() {
+  if (stopping) return;
+  let request;
+  try {
+    request = JSON.parse(await readFile(stopRequestPath, "utf8"));
+  } catch (error) {
+    if (error.code !== "ENOENT") log(`gameplay stop request read failed: ${error.message}`);
+    return;
+  }
+  const requestedAt = Date.parse(request.requestedAt);
+  if (
+    request.version !== 1
+    || request.scope !== "global"
+    || request.requestedByOwner !== true
+    || !allowedGroups.includes(String(request.groupId))
+    || !Number.isFinite(requestedAt)
+    || Date.now() - requestedAt > 10 * 60_000
+  ) {
+    await unlink(stopRequestPath).catch(() => undefined);
+    log("ignored invalid or stale gameplay stop request");
+    return;
+  }
+
+  const packageName = String(
+    state.activeSession?.packageName
+    || liveGameplayState?.packageName
+    || request.packageName
+    || "",
+  );
+  state.autonomyPaused = true;
+  state.autonomyPausedAt = new Date().toISOString();
+  state.autonomyPauseReason = String(request.reason || "owner requested stop").slice(0, 1000);
+  state.running = false;
+  activePlayAbortController?.abort();
+  activePlayAbortController = null;
+
+  if (state.lastDevice && packageName) {
+    await adbRun(state.lastDevice, ["shell", "am", "force-stop", packageName])
+      .catch((error) => log(`game close after stop failed: ${error.message}`));
+  }
+  await unlink(questionActivePath).catch(() => undefined);
+  await unlink(questionRequestPath).catch(() => undefined);
+  await unlink(stopRequestPath).catch(() => undefined);
+
+  if (liveGameplayState) {
+    liveGameplayState.active = false;
+    liveGameplayState.phase = "stopped";
+    liveGameplayState.current = null;
+    liveGameplayState.pendingTools = {};
+    liveGameplayState.lastVisibleText = "Gameplay stopped by owner";
+    liveGameplayState.updatedAt = new Date().toISOString();
+    scheduleLiveGameplaySave();
+  }
+  await saveState();
+  await flushLiveGameplayState();
+  await brain.observe(
+    brainScope(String(request.groupId)),
+    "owner_gameplay_stop",
+    { reason: request.reason || "", packageName },
+    true,
+  ).catch(() => null);
+  log(`gameplay stopped and autonomy paused by owner in group=${request.groupId}`);
 }
 
 function recordGameplayActivity(event, scope) {
@@ -1372,6 +1453,9 @@ async function loadState(path) {
     return {
       version: 1,
       running: false,
+      autonomyPaused: false,
+      autonomyPausedAt: null,
+      autonomyPauseReason: "",
       activeGroupId: "",
       activeSession: null,
       interruptedSession: null,
@@ -1396,6 +1480,7 @@ function log(message) {
 function shutdown() {
   stopping = true;
   clearInterval(timer);
+  clearInterval(controlTimer);
   connection.close();
   setTimeout(() => process.exit(0), 100);
 }

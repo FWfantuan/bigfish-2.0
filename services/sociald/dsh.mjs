@@ -28,7 +28,7 @@ export class DshDecisionMaker {
     this.bin = existsSync(configuredBin) ? configuredBin : null;
   }
 
-  async decide({ prompt, sessionId, timeoutMs, onEvent }) {
+  async decide({ prompt, sessionId, timeoutMs, onEvent, signal }) {
     if (!this.bin) throw new Error(`DSH entry not found: ${DSH_BIN}; run pnpm install`);
     const args = [this.bin, "--profile", this.config.profile, "--json"];
     if (sessionId) args.push("--session-id", sessionId);
@@ -46,7 +46,26 @@ export class DshDecisionMaker {
     let discoveredSession = "";
     let errorMessage = "";
     let finishedOnFinal = false;
+    let aborted = false;
     let finalTimer = null;
+    const terminateChild = () => {
+      if (child.exitCode !== null) return;
+      if (process.platform === "win32") {
+        const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+          windowsHide: true,
+          stdio: "ignore",
+        });
+        killer.unref();
+      } else {
+        child.kill("SIGTERM");
+      }
+    };
+    const onAbort = () => {
+      aborted = true;
+      terminateChild();
+    };
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
 
     const inspectLine = (line) => {
       if (!line.trim().startsWith("{")) return;
@@ -63,7 +82,7 @@ export class DshDecisionMaker {
             // Some tool plugins keep their process alive after the turn. The
             // terminal `final` event is the completion signal; stop after a
             // short flush instead of waiting for the full task timeout.
-            finalTimer = setTimeout(() => child.kill(), 250);
+            finalTimer = setTimeout(terminateChild, 250);
           }
         }
         if (event.type === "status" && event.reason?.kind === "error") {
@@ -86,13 +105,15 @@ export class DshDecisionMaker {
       }
     });
     child.stderr.on("data", (chunk) => (stderr += chunk));
-    const timer = setTimeout(() => child.kill(), timeoutMs);
+    const timer = setTimeout(terminateChild, timeoutMs);
     const code = await new Promise((resolveCode) => child.on("close", resolveCode));
     clearTimeout(timer);
     if (finalTimer) clearTimeout(finalTimer);
+    signal?.removeEventListener("abort", onAbort);
     if (stdoutBuffer.trim()) inspectLine(stdoutBuffer);
 
     if ((!finishedOnFinal && code !== 0) || errorMessage) {
+      if (aborted) throw new Error("DSH execution aborted by host");
       throw new Error(errorMessage || stderr.trim() || `DSH exited with ${code}`);
     }
     return { decision: parseDecisionText(finalText || stdout), raw: finalText || stdout, sessionId: discoveredSession };

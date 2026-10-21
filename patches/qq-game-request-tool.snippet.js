@@ -232,10 +232,93 @@ function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
             return undefined;
         })
         : () => { };
+    const stopDisposable = ctx.tools.register(defineTool({
+        name: 'bigfish_stop_gameplay',
+        description: 'Immediately stop the current BigFish game, cancel queued gameplay, close the game process and pause future autonomous gameplay until the owner explicitly starts a new game.',
+        parameters: {
+            reason: {
+                type: 'string',
+                description: 'Optional short reason from the owner stop request.',
+            },
+        },
+        output: {
+            schema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                    stopped: { type: 'boolean', required: true },
+                    queued: { type: 'boolean', required: true },
+                    group_id: { type: 'string', required: true },
+                },
+            },
+            render: (_args, value) => [{
+                type: 'text',
+                text: value.stopped
+                    ? `Gameplay stopped for group ${value.group_id}.`
+                    : `Gameplay stop requested for group ${value.group_id}; mumud has not acknowledged yet.`,
+            }],
+        },
+        timeoutMs: 10000,
+        isConcurrencySafe: () => false,
+        async execute(args, exec) {
+            const sessionId = exec.agent?.session?.id;
+            const sessionKey = sessionId === undefined ? undefined : bigfishSessionTargets.get(sessionId);
+            if (!sessionKey)
+                throw new Error('当前 QQ 会话无法解析游戏停止目标');
+            if (globalThis.__bigfishQqOwnerBySession?.get(sessionId) !== true)
+                throw new Error('只有主人本人可以停止游戏');
+            const [scope, target] = String(sessionKey).split(':', 2);
+            if (scope !== 'group')
+                throw new Error('游戏停止只允许从白名单群发起');
+            const allowedGroups = String(process.env.BIGFISH_ALLOWED_GROUPS || '')
+                .split(',').map((value) => value.trim()).filter(Boolean);
+            if (!allowedGroups.includes(String(target)))
+                throw new Error('当前群不在自动游戏白名单');
+            const [{ mkdir, readFile, rename, unlink, writeFile }, { dirname, resolve }] = await Promise.all([
+                import('node:fs/promises'),
+                import('node:path'),
+            ]);
+            const projectRoot = process.env.BIGFISH_PROJECT_ROOT || process.cwd();
+            const directory = resolve(projectRoot, 'data', 'mumud');
+            const requestPath = resolve(directory, 'request.json');
+            const stopPath = resolve(directory, 'stop.request.json');
+            await mkdir(directory, { recursive: true });
+            await unlink(requestPath).catch((error) => {
+                if (error?.code !== 'ENOENT') throw error;
+            });
+            const request = {
+                version: 1,
+                requestedAt: new Date().toISOString(),
+                scope: 'global',
+                groupId: String(target),
+                requestedByOwner: true,
+                reason: String(args.reason || 'owner requested that gameplay stop').trim().slice(0, 1000),
+            };
+            const temporary = `${stopPath}.tmp`;
+            await writeFile(temporary, `${JSON.stringify(request, null, 2)}\n`, 'utf8');
+            await rename(temporary, stopPath);
+            let stopped = false;
+            for (let attempt = 0; attempt < 12; attempt += 1) {
+                await new Promise((resolveDelay) => setTimeout(resolveDelay, 300));
+                try {
+                    const state = JSON.parse(await readFile(resolve(directory, 'state.json'), 'utf8'));
+                    if (state.autonomyPaused === true && state.running !== true) {
+                        stopped = true;
+                        break;
+                    }
+                }
+                catch {
+                    // The acknowledgement may race the first state write.
+                }
+            }
+            return { stopped, queued: !stopped, group_id: String(target) };
+        },
+    }));
     console.info('[bigfish-game] bigfish_request_gameplay registered');
     console.info('[bigfish-game] bigfish_gameplay_status registered');
+    console.info('[bigfish-game] bigfish_stop_gameplay registered');
     return () => {
-        for (const disposable of [gameplayToolGuard, requestDisposable, statusDisposable]) {
+        for (const disposable of [gameplayToolGuard, requestDisposable, statusDisposable, stopDisposable]) {
             if (typeof disposable === 'function')
                 disposable();
             else

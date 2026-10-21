@@ -23,6 +23,10 @@ test("gameplay final reports and strategic questions are wired to screenshots", 
   assert.match(main, /recordGameplayActivity/);
   assert.match(main, /data\/mumud\/live\.json/);
   assert.match(main, /applyLiveGameplayEvent/);
+  assert.match(main, /stop\.request\.json/);
+  assert.match(main, /handleGameplayStopRequest/);
+  assert.match(main, /autonomyPaused/);
+  assert.match(main, /activePlayAbortController/);
   assert.match(main, /composeGameplayMessage/);
   assert.match(main, /profile: "bigfish-social"/);
   assert.doesNotMatch(main, /我刚刚突然想玩/);
@@ -60,4 +64,6 @@ test("QQ chat has a read-only gameplay status tool", async () => {
   assert.match(tools, /mutatingAndroidTools/);
   assert.match(tools, /latest_screenshot_path/);
   assert.match(tools, /recent_events/);
+  assert.match(tools, /bigfish_stop_gameplay/);
+  assert.match(tools, /requestedByOwner: true/);
 });

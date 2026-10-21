@@ -19,6 +19,12 @@ the active session. When a latest screenshot exists, the QQ worker may call
 `read_image` on that path. It must not operate Android or launch a second game
 controller.
 
+`bigfish_stop_gameplay` is an owner-only control plane. It removes a pending
+gameplay request, asks `mumud` to cancel the play agent process tree, force-stops
+the active game package, and persists `autonomyPaused=true` in the shared state.
+That flag survives supervisor and `mumud` restarts. Only a later authenticated
+owner gameplay request clears it and allows a new game.
+
 This preserves the useful split between responsive chat and background action
 while removing the experience split: both workers describe the same current
 screen, action, result and recent game history.

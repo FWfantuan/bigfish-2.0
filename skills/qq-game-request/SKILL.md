@@ -18,4 +18,7 @@ When the owner explicitly says to go play, such as “去玩明日方舟” or �
 - The gameplay worker is asynchronous. After `queued: true`, **do not call another tool, do not read state/status, do not start a sleep, and do not inspect source code**. In the same turn, immediately output one contextual sentence and end. The background worker will send launch, screenshots, questions and the final result to the same group.
 - If the owner follows up while that session is queued or running, call `bigfish_gameplay_status` and use its `live` event stream. If `latest_screenshot_path` is present, call `read_image` on that path before answering. Never use `android_interact`, `android_launch_app`, shell commands, or screenshot polling as a second game controller.
 - Direct @ messages are already owned by the live QQ chat lane. Do not create a second tool approval or proactive reply for the same message.
+- When the owner says “先别开游戏了”, “先别玩了”, or asks to pause gameplay, call
+  `bigfish_stop_gameplay` immediately. It cancels the queue, ends the current game process,
+  closes the game and pauses future autonomous starts until a new explicit play request.
 - A tool error should be reported as-is without a source-code investigation loop.
