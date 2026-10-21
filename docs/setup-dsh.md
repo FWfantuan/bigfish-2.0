@@ -17,6 +17,11 @@ pnpm dsh:patch
 ```text
 @yachangchang/dsh-qq-bridge 1.0.6
 dsh-plugin-bilibili 0.2.1
+@yeesy369/dsh-browser-playwright 0.8.1
+@yeesy369/dsh-tool-browser 0.7.0
+@zseven-w/dsh-android 0.1.0-rc.12
+@deepseek-ai/dsh-computer-use 0.1.6-alpha.1
+@deepseek-ai/dsh-experimental-computer-use-cua-driver-native 0.1.6-alpha.1
 ```
 
 `bigfish-worker` 的插件：
