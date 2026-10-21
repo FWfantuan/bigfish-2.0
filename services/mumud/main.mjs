@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -53,6 +53,7 @@ const stopRequestPath = resolve("data/mumud/stop.request.json");
 const questionRequestPath = resolve("data/mumud/question.request.json");
 const questionActivePath = resolve("data/mumud/question.active.json");
 const questionAnswerPath = resolve("data/mumud/question.answer.json");
+const dshScreenshotDirectory = resolve(homedir(), "AppData/Local/Temp/dsh-android/screenshots");
 const state = await loadState(statePath);
 let liveGameplayState = await loadLiveGameplayState(liveStatePath);
 let liveSaveChain = Promise.resolve();
@@ -98,6 +99,29 @@ let maaProbe = {
   available: false,
   reason: maaConfig.enabled === false ? "disabled" : "not-probed",
 };
+
+// Android screenshots are temporary evidence, not a durable archive. A long
+// running Agent can otherwise fill the system drive and fail before it can
+// send a QQ reply. Keep a small recent window for status/debugging.
+async function pruneDshScreenshots(maxFiles = 80) {
+  try {
+    const entries = await readdir(dshScreenshotDirectory);
+    const files = [];
+    for (const name of entries) {
+      if (!name.toLowerCase().endsWith(".png")) continue;
+      const path = resolve(dshScreenshotDirectory, name);
+      try { files.push({ path, mtime: (await stat(path)).mtimeMs }); } catch { /* raced with writer */ }
+    }
+    files.sort((a, b) => b.mtime - a.mtime);
+    await Promise.all(files.slice(maxFiles).map((item) => unlink(item.path).catch(() => null)));
+  } catch (error) {
+    if (error?.code !== "ENOENT") log(`screenshot cache cleanup failed: ${error.message}`);
+  }
+}
+
+await pruneDshScreenshots();
+const screenshotCleanupTimer = setInterval(() => { void pruneDshScreenshots(); }, 5 * 60_000);
+screenshotCleanupTimer.unref();
 const runtimeStatus = {
   version: 1,
   updatedAt: new Date().toISOString(),
