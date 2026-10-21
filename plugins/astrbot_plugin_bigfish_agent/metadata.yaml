@@ -1,0 +1,4 @@
+name: astrbot_plugin_bigfish_agent
+desc: 大肥鱼 2.0 Agent 内核基础层：状态、暂停、记忆和安全任务队列
+version: v0.1.0
+author: local
