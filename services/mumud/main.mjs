@@ -20,6 +20,7 @@ import {
   parseOnlineDevices,
   reconcileDevicePresence,
   resolveAgenticGameplayMode,
+  resolveAgenticGameplayTheme,
   resolveConfiguredGame,
   sessionGate,
   validateGameplayRequest,
@@ -437,6 +438,22 @@ async function playChosenGame({
   ownerRequest = null,
 }) {
   const finalGroupId = ownerRequest?.groupId || notifyGroup;
+  const maaHint = [
+    ownerRequest?.game,
+    ownerRequest?.reason,
+    selectionReason,
+    target.objective,
+    target.name,
+  ].filter(Boolean).join(" ");
+  const agenticMode = resolveAgenticGameplayMode(maaHint, agenticGameplay);
+  const requestedTheme = resolveAgenticGameplayTheme(maaHint, agenticGameplay);
+  const requestedLabel = requestedTheme ? `·${requestedTheme.name}` : "";
+  runtimeStatus.currentTarget = {
+    name: target.name,
+    packageName,
+    theme: requestedTheme?.name || null,
+  };
+  await saveStatus();
   await updateActiveSession({
     groupId: finalGroupId,
     packageName,
@@ -448,23 +465,16 @@ async function playChosenGame({
   const scope = brainScope(finalGroupId);
   const goal = await brain.goal(
     scope,
-    `自主玩 ${target.name}`,
+    `自主玩 ${target.name}${requestedLabel}`,
     selectionReason
       ? `${target.objective}\n选择理由：${selectionReason}`
       : target.objective,
     1,
   ).catch(() => null);
-  const maaHint = [
-    ownerRequest?.game,
-    selectionReason,
-    target.objective,
-    target.name,
-  ].filter(Boolean).join(" ");
-  const agenticMode = resolveAgenticGameplayMode(maaHint, agenticGameplay);
   await updateActiveSession({
     goalId: goal?.id || null,
     game: target.name,
-    mode: agenticMode?.name || target.name,
+    mode: `${agenticMode?.name || target.name}${requestedLabel}`,
     phase: "playing",
   });
   if (!agenticMode) {
@@ -489,8 +499,15 @@ async function playChosenGame({
         maxSessionMinutes: Number(agenticMode.maxSessionMinutes || target.maxSessionMinutes),
         maxActions: Number(agenticMode.maxActions || target.maxActions),
         webSearch: agenticMode.webSearch !== false,
+        requestedTheme,
       }
     : target;
+  if (agenticMode) {
+    await updateActiveSession({
+      target: activeTarget,
+      mode: `${agenticMode.name || target.name}${requestedLabel}`,
+    });
+  }
   const prompt = buildGameplayPrompt({
     target: activeTarget,
     device,
@@ -501,7 +518,7 @@ async function playChosenGame({
   const stopObserver = startGameplayObserver({
     device,
     game: activeTarget.name,
-    modeName: agenticMode?.name || "",
+    modeName: `${agenticMode?.name || ""}${requestedLabel}`,
     observation: agenticMode?.observation,
     groupId: ownerRequest?.groupId || notifyGroup,
   });

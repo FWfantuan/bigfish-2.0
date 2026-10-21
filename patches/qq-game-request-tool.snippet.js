@@ -6,7 +6,7 @@ function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
         name: 'bigfish_request_gameplay',
         description: 'Queue an immediate autonomous gameplay session when the owner explicitly orders BigFish to play. This bypasses routine cooldown but never bypasses payment, account, privacy, or other safety limits. Do not call it for a question or ordinary game discussion.',
         parameters: {
-            game: { type: 'string', description: 'Optional game name from the owner message, for example 明日方舟. Omit when the owner only says 去玩.' },
+            game: { type: 'string', description: 'Optional exact game, mode or theme from the owner message, for example 明日方舟 黑流树海. Preserve a named roguelike theme in this field. Omit only when the owner leaves the whole choice open.' },
             reason: { type: 'string', required: true, description: 'The owner request and the bounded play intention, in one short sentence.' },
         },
         output: {

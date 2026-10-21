@@ -13,6 +13,7 @@ import {
   parseOnlineDevices,
   reconcileDevicePresence,
   resolveAgenticGameplayMode,
+  resolveAgenticGameplayTheme,
   resolveConfiguredGame,
   sessionGate,
   validateGameplayRequest,
@@ -268,6 +269,44 @@ test("agentic gameplay modes are selected from owner intent", () => {
   assert.equal(resolveAgenticGameplayMode("帮我打黑流树海", config)?.id, "arknights-roguelike");
   assert.equal(resolveAgenticGameplayMode("打开明日方舟随便看看", config)?.id, "arknights-open");
   assert.equal(resolveAgenticGameplayMode("随便打一把", config), null);
+});
+
+test("named roguelike themes stay distinct from the generic roguelike mode", () => {
+  const config = {
+    enabled: true,
+    modes: [
+      {
+        id: "arknights-roguelike",
+        keywords: ["肉鸽", "集成战略", "黑流树海", "界园"],
+        themes: [
+          { id: "blackflow", name: "沉沦者的黑流树海", keywords: ["黑流树海", "黑柳树海"] },
+          { id: "jiegarden", name: "岁的界园志异", keywords: ["界园"] },
+        ],
+      },
+    ],
+  };
+  assert.equal(resolveAgenticGameplayTheme("明日方舟 黑流树海", config)?.id, "blackflow");
+  assert.equal(resolveAgenticGameplayTheme("继续今天开的界园", config)?.id, "jiegarden");
+  assert.equal(resolveAgenticGameplayTheme("随便打明日方舟肉鸽", config), null);
+});
+
+test("a requested roguelike theme is a hard prompt constraint", () => {
+  const prompt = buildGameplayPrompt({
+    target: {
+      name: "明日方舟",
+      objective: "自己打一局肉鸽",
+      maxActions: 120,
+      requestedTheme: { id: "blackflow", name: "沉沦者的黑流树海" },
+    },
+    device: "127.0.0.1:16384",
+    packageName: "com.hypergryph.arknights",
+    agenticMode: { id: "arknights-roguelike", name: "明日方舟肉鸽" },
+  });
+  assert.match(prompt, /主题锁定/);
+  assert.match(prompt, /沉沦者的黑流树海/);
+  assert.match(prompt, /不要点击「继续探索」/);
+  assert.match(prompt, /明确显示「岁的界园志异」/);
+  assert.match(prompt, /调用 arknights_ask_owner/);
 });
 
 test("gameplay observation is read-only and defaults to staying quiet", () => {

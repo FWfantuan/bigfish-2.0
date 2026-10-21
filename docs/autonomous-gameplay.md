@@ -41,6 +41,13 @@ The full tool trajectory and factual report are retained for Brain learning, but
 
 An explicit owner request is different from the routine autonomous cooldown. The QQ tool `bigfish_request_gameplay` verifies the current group and the platform-provided `is_owner=true` identity before writing a short-lived request to `data/mumud/request.json`. Any group in `BIGFISH_ALLOWED_GROUPS` is accepted. `mumud` atomically consumes that request, bypasses routine cooldown, and records it in Brain. The request's own `groupId` becomes the session target, so launch messages, screenshots, strategic questions and final results return to that same group. Safety rules are not bypassed.
 
+Named roguelike themes are resolved separately from the generic
+`arknights-roguelike` mode. A request for `明日方舟 黑流树海` keeps that theme in
+the prompt as a hard constraint. The worker must return to theme selection and
+confirm the requested title instead of pressing Continue on an existing
+`岁的界园志异` or other run. A visible mismatch or unresolved theme blocks play
+and asks the owner rather than guessing.
+
 During a longer session, a read-only observer checks the real screen after the initial delay and at the configured interval. It stays quiet for ordinary progress, shares a screenshot when a visible moment is genuinely worth showing, and asks the owner when a decision is truly blocked. Duplicate images are suppressed. `maxShares: 0` means there is no fixed share-count cap; the model still follows the no-spam rule and the configured interval.
 
 The main play worker asks much earlier than a tool failure. Opening squad, starting operators, recruitment, unfamiliar relics, route/event choices, and materially different combat plans can call `arknights_ask_owner`. That creates a pending question, sends its real screenshot to the owner, and pauses the choice. The owner's QQ reply is passed through `bigfish_answer_gameplay`, written back to `data/mumud/question.answer.json`, and the waiting game resumes with that answer. Trivial actions and clear decisions continue autonomously.

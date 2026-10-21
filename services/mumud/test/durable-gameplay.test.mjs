@@ -17,6 +17,8 @@ test("gameplay final reports and strategic questions are wired to screenshots", 
   assert.match(main, /brainScope\(ownerRequest\?\.groupId \|\| notifyGroup\)/);
   assert.match(main, /activeGroupId = String\(ownerRequest\.groupId\)/);
   assert.match(main, /beginActiveSession/);
+  assert.match(main, /resolveAgenticGameplayTheme/);
+  assert.match(main, /requestedTheme/);
   assert.match(main, /activeSession: state\.activeSession/);
   assert.match(main, /reportInterruptedGameplay/);
   assert.match(main, /gameplay_process_interrupted/);

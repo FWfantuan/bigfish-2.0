@@ -9,7 +9,9 @@ whenToUse: Use when the owner explicitly tells BigFish to go play a named or sel
 When the owner explicitly says to go play, such as “去玩明日方舟” or “玩吧”, call
 `bigfish_request_gameplay`.
 
-- Pass the game name when the owner names one.
+- Pass the exact game and named submode when the owner names one, such as
+  `明日方舟 黑流树海`. Never reduce a named roguelike theme to the generic game
+  name in the `game` field.
 - Omit `game` when the owner leaves the choice open.
 - Put the actual bounded intention in `reason`.
 - Do not use this tool for a question about a game, a hypothetical, or ordinary discussion.

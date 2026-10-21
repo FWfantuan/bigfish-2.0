@@ -143,6 +143,23 @@ export function resolveAgenticGameplayMode(hint, config = {}) {
   ) || null;
 }
 
+export function resolveAgenticGameplayTheme(hint, config = {}) {
+  const normalized = String(hint || "").normalize("NFKC").toLowerCase();
+  if (!normalized || config.enabled === false) return null;
+  for (const mode of config.modes || []) {
+    for (const theme of mode.themes || []) {
+      if (!Array.isArray(theme.keywords)) continue;
+      if (theme.keywords.some((keyword) => {
+        const value = String(keyword || "").normalize("NFKC").toLowerCase();
+        return value && normalized.includes(value);
+      })) {
+        return { ...theme, modeId: mode.id };
+      }
+    }
+  }
+  return null;
+}
+
 export function normalizeGameplayObservation(decision) {
   const action = String(decision?.action || "none").trim().toLowerCase();
   if (!["none", "share", "ask"].includes(action)) {
@@ -270,6 +287,17 @@ export function buildGameplayPrompt({ target, device, packageName, goalId, agent
     ? target.forbiddenActions
     : [];
   const roguelikeMode = agenticMode?.id === "arknights-roguelike";
+  const requestedTheme = target.requestedTheme || null;
+  const themeRules = requestedTheme
+    ? `
+
+主题锁定：主人明确要求「${requestedTheme.name}」。
+- 这是硬约束，不是偏好。不要因为它也属于集成战略就当成同一个模式。
+- 不要点击「继续探索」、历史进度或当前存档来沿用其它主题。先返回集成战略主题选择页，明确找到「${requestedTheme.name}」。
+- 只有画面文字或稳定 UI 已确认是「${requestedTheme.name}」，才能继续开局和操作。
+- 如果画面明确显示「岁的界园志异」、其它主题，或你无法确认当前主题，立即停止当前局内的选择与战斗，返回主题选择页。
+- 返回后仍找不到指定主题、入口不可用或画面无法确认时，调用 arknights_ask_owner 说明情况；不确定时不要随便开一局。`
+    : "";
   const agenticRules = agenticMode
     ? `
 
@@ -293,8 +321,10 @@ ${roguelikeMode
 设备：${device}
 游戏：${target.name}（${packageName}）
 目标：${target.objective}
+${requestedTheme ? `指定主题：${requestedTheme.name}` : ""}
 本局最多进行 ${target.maxActions} 个有意义动作。只有你确实改变了游戏状态，才计为一个动作。
 ${goalId ? `统一中枢目标 ID：${goalId}` : ""}
+${themeRules}
 ${agenticRules}
 
 这是你自己的生活片段，不是给主人交工程验收报告。完整事实可以记录在过程里，但最后给 QQ 群友看的内容必须像大肥鱼本人随口发给朋友的话。可以兴奋、吐槽、犹豫或直说没打好；不要为了完整而逐项汇报。
