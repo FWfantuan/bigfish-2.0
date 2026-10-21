@@ -160,6 +160,14 @@ export function createBigFishArknightsTools() {
           doc: { type: "string" },
         },
       },
+      resumeBeforeAction: {
+        type: "boolean",
+        description: "When the current screenshot is the manual PAUSE overlay, resume combat inside this same tool call immediately before MAA connects.",
+      },
+      pauseAfterAction: {
+        type: "boolean",
+        description: "Pause combat again inside this same tool call after MAA returns, so the next planning step has protected observation time.",
+      },
     },
     output: {
       schema: {
@@ -171,6 +179,9 @@ export function createBigFishArknightsTools() {
           stageName: { type: "string", required: true },
           actionType: { type: "string", required: true },
           deploymentWithPause: { type: "boolean", required: true, const: false },
+          resumedBeforeAction: { type: "boolean", required: true },
+          pausedAfterAction: { type: "boolean", required: true },
+          postActionScreenshotPath: { type: "string", required: true },
           logPath: { type: "string", required: true },
           outputTail: { type: "string", required: true },
         },
@@ -193,6 +204,34 @@ export function createBigFishArknightsTools() {
       await access(paths.cli, fsConstants.F_OK);
       await access(resolve(paths.root, "MaaCore.dll"), fsConstants.F_OK);
       await ensureActionsProfile(paths);
+      let resumedBeforeAction = false;
+      let pausedAfterAction = false;
+      let postActionScreenshotPath = "";
+      const pressPauseToggle = async () => {
+        const adbPath = process.env.ADB || "adb";
+        await execFileAsync(
+          adbPath,
+          [
+            "-s",
+            serial,
+            "shell",
+            "input",
+            "tap",
+            String(Math.round(UI_ANCHORS.pause_toggle[0] * 1920)),
+            String(Math.round(UI_ANCHORS.pause_toggle[1] * 1080)),
+          ],
+          {
+            windowsHide: true,
+            timeout: 10_000,
+            maxBuffer: 1024 * 1024,
+          },
+        );
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+      };
+      if (args.resumeBeforeAction === true) {
+        await pressPauseToggle();
+        resumedBeforeAction = true;
+      }
 
       const tasksDirectory = resolve(paths.configDir, "tasks");
       await mkdir(tasksDirectory, { recursive: true });
@@ -234,12 +273,21 @@ export function createBigFishArknightsTools() {
         } catch {
           logTail = "";
         }
+        if (args.pauseAfterAction === true) {
+          await pressPauseToggle();
+          pausedAfterAction = true;
+        }
+        const postAction = await adbScreenshot(serial);
+        postActionScreenshotPath = await saveScreenshot(postAction.bytes, "arknights-after-action");
         return {
           ok: true,
           serial,
           stageName: String(task.tasks[0].params.details.stage_name),
           actionType,
           deploymentWithPause: false,
+          resumedBeforeAction,
+          pausedAfterAction,
+          postActionScreenshotPath,
           logPath,
           outputTail: `${result.stdout}\n${result.stderr}\n${logTail}`.trim().slice(-16_000),
         };

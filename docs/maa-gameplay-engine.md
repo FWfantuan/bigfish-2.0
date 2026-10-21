@@ -67,6 +67,14 @@ verified steps. Arknights does not accept operator deployment while the manual
 pause overlay is open, so the worker resumes combat first and verifies the
 operator is actually on the field after each MAA deployment.
 
+When the observation screenshot was taken while paused, the resume click is
+part of the same `arknights_maa_action` call through `resumeBeforeAction=true`.
+This removes the model round-trip between “resume” and “deploy”. An optional
+`pauseAfterAction=true` pauses immediately after MAA returns, giving the next
+planning step protected observation time without relying on a real-time delay.
+The action response always includes `postActionScreenshotPath` for placement
+verification.
+
 Inside combat the worker calls `arknights_maa_action`. This tool validates one
 Copilot action selected by BigFish, writes it into a temporary MAA `SingleStep`
 task, and runs MAA Core with a generated `bigfish-actions` profile whose

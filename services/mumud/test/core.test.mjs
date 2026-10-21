@@ -224,7 +224,9 @@ test("agentic roguelike prompt resumes paused battles before deployment", () => 
   assert.match(prompt, /MAA 要作为你的手/);
   assert.match(prompt, /deployment_with_pause=false/);
   assert.match(prompt, /PAUSE 状态下不能部署/);
-  assert.match(prompt, /截图确认干员真的落地/);
+  assert.match(prompt, /resumeBeforeAction=true/);
+  assert.match(prompt, /pauseAfterAction=true/);
+  assert.match(prompt, /postActionScreenshotPath/);
   assert.match(prompt, /arknights_maa_action/);
   assert.match(prompt, /禁止 SkillDaemon/);
   assert.match(prompt, /自己决定并操作/);

@@ -31,6 +31,9 @@ test("gameplay final reports and strategic questions are wired to screenshots", 
   assert.match(tools, /opening squad\/operators/);
   assert.match(tools, /--log-file=\$\{logPath\}/);
   assert.match(tools, /details\?\.actions\?\.\[0\]\?\.type/);
+  assert.match(tools, /resumeBeforeAction/);
+  assert.match(tools, /pauseAfterAction/);
+  assert.match(tools, /postActionScreenshotPath/);
 });
 
 test("mumud has a single-instance login supervisor with auto restart", async () => {
