@@ -204,7 +204,8 @@ export function createBigFishArknightsTools() {
         paths.logDir,
         `${new Date().toISOString().replace(/[:.]/g, "-")}-bigfish-live-action.log`,
       );
-      const actionType = String(task.tasks[1].params.details.type);
+      const actionType = String(task.tasks[1]?.params?.details?.actions?.[0]?.type || "");
+      if (!actionType) throw new Error("MAA single-step action type is missing");
       try {
         const result = await execFileAsync(
           paths.cli,

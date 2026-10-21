@@ -27,6 +27,7 @@ test("gameplay final reports and strategic questions are wired to screenshots", 
   assert.match(tools, /arknights_ask_owner/);
   assert.match(tools, /opening squad\/operators/);
   assert.match(tools, /--log-file=\$\{logPath\}/);
+  assert.match(tools, /details\?\.actions\?\.\[0\]\?\.type/);
 });
 
 test("mumud has a single-instance login supervisor with auto restart", async () => {
