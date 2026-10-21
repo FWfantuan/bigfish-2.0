@@ -141,33 +141,25 @@ async function ensureQqProgressConfig() {
     }
     throw error;
   }
-  if (source.includes("BIGFISH_QQ_PROGRESS_CONFIG")) {
+  const marker = "BIGFISH_QQ_NO_FIXED_PROGRESS";
+  const progressPattern =
+    /(\r?\n)\s{6}progress:\r?\n[\s\S]*?(?=\r?\n\s{6}cwd:)/;
+  let next = source;
+  if (!next.includes(marker) && progressPattern.test(next)) {
+    next = next.replace(
+      progressPattern,
+      [
+        "$1      # BIGFISH_QQ_NO_FIXED_PROGRESS: replies must be contextual.",
+        "      progress:",
+        "        messages: []",
+      ].join("\n"),
+    );
+  }
+  if (next === source) {
     console.log(`already patched: ${qqProfilePatch}`);
     return;
   }
-  const anchor = "      model: deepseek-v4-flash";
-  if (!source.includes(anchor)) {
-    throw new Error(`QQ progress config anchor not found: ${qqProfilePatch}`);
-  }
-  await writeFile(
-    qqProfilePatch,
-    source.replace(
-      anchor,
-      [
-        "      # BIGFISH_QQ_PROGRESS_CONFIG: keep full tools, but make long work visible.",
-        anchor,
-        "      timeoutMs: 180000",
-        "      timeoutMessage: 我这边卡住了，再艾特我一下",
-        "      progress:",
-        "        messages:",
-        "          - delayMs: 20000",
-        "            text: 我在翻后台，稍等一下",
-        "          - delayMs: 70000",
-        "            text: 还在查，我没装死",
-      ].join("\n"),
-    ),
-    "utf8",
-  );
+  await writeFile(qqProfilePatch, next, "utf8");
   console.log(`patched: ${qqProfilePatch}`);
 }
 
@@ -238,13 +230,14 @@ async function ensureQqSystemPersona() {
   }
 
   const preselected = profileSource.replace(
-    /(^|\n)(\s{6})preset:\s*standard(?=\r?$)/m,
-    "$1$2preset: dsh-qq-bridge",
+    /(^|\n)(\s{6})preset:\s*(?:standard|dsh-qq-bridge)(?=\r?$)/m,
+    "$1$2preset: bigfish-chat",
   );
   if (preselected !== profileSource) {
     await writeFile(qqProfilePatch, preselected, "utf8");
     console.log(`patched QQ agent preset selection: ${qqProfilePatch}`);
   }
+  profileSource = preselected;
 
   let presetSource;
   let agentsSource;
@@ -290,6 +283,36 @@ async function ensureQqSystemPersona() {
     console.log(`patched QQ system persona: ${qqAgentPreset}`);
   } else {
     console.log(`already patched: ${qqAgentPreset}`);
+  }
+
+  const customPresetStart = profileSource.indexOf("    - id: preset-bigfish-chat");
+  const customPresetEnd = profileSource.indexOf("    - id: computer-use", customPresetStart);
+  if (customPresetStart < 0 || customPresetEnd < 0) {
+    throw new Error(`custom BigFish preset patch anchors not found: ${qqProfilePatch}`);
+  }
+  const skillsDir = resolve(dshHome, ".agent-presets/dsh-qq-bridge/skills");
+  const renderedPlugins = next
+    .replace("__DSH_QQ_BRIDGE_SKILLS_DIR__", JSON.stringify(skillsDir))
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => `          ${line}`)
+    .join("\n");
+  const customPreset = [
+    "    - id: preset-bigfish-chat",
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    "      config:",
+    "        id: bigfish-chat",
+    "        order: 90",
+    "        plugins:",
+    renderedPlugins,
+    "",
+  ].join("\n");
+  const withCustomPreset = `${profileSource.slice(0, customPresetStart)}${customPreset}${profileSource.slice(customPresetEnd)}`;
+  if (withCustomPreset !== profileSource) {
+    await writeFile(qqProfilePatch, withCustomPreset, "utf8");
+    console.log(`patched registered BigFish preset: ${qqProfilePatch}`);
+  } else {
+    console.log(`already patched registered BigFish preset: ${qqProfilePatch}`);
   }
 }
 
@@ -760,6 +783,29 @@ await patch(
   }
 }
 
+{
+  const source = await readFile(qqPlugin, "utf8");
+  const startMarker = "            const events = Array.isArray(exec.agent?.session?.events)";
+  const endMarker = "            if (!isOwner)";
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, Math.max(0, start));
+  if (!source.includes("BIGFISH_QQ_OWNER_CONTEXT") && start >= 0 && end > start) {
+    const replacement = [
+      "            // BIGFISH_QQ_OWNER_CONTEXT",
+      "            // The live session does not expose the current user message in",
+      "            // session.events at tool execution time. The executor records the",
+      "            // platform-derived owner flag before delivery.",
+      "            const isOwner = globalThis.__bigfishQqOwnerBySession?.get(sessionId) === true;",
+      "",
+    ].join("\n");
+    const next = `${source.slice(0, start)}${replacement}${source.slice(end)}`;
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`patched QQ owner runtime context: ${qqPlugin}`);
+  } else {
+    console.log(`already patched QQ owner runtime context: ${qqPlugin}`);
+  }
+}
+
 const executorSource = await readFile(qqExecutor, "utf8");
 if (!executorSource.includes("BIGFISH_BRAIN_CONTEXT")) {
   let next = executorSource
@@ -852,6 +898,54 @@ async function bigFishBrainRecordTurn(sessionKey, payload, result, events) {
 } else {
   console.log(`already patched: ${qqExecutor}`);
 }
+
+{
+  const source = await readFile(qqExecutor, "utf8");
+  if (!source.includes("BIGFISH_QQ_OWNER_RUNTIME")) {
+    let next = source.replace(
+      [
+        "        const brainPayload = await bigFishBrainEnrich(sessionKey, payload);",
+        "        const { agent, sessionId } = await this.getOrCreateSessionAgent(sessionKey);",
+        "        await this.dsh.deliver(agent, brainPayload, onChunk);",
+      ].join("\n"),
+      [
+        "        const brainPayload = await bigFishBrainEnrich(sessionKey, payload);",
+        "        const { agent, sessionId } = await this.getOrCreateSessionAgent(sessionKey);",
+        "        bigFishRememberMessageOwner(sessionId, brainPayload);",
+        "        await this.dsh.deliver(agent, brainPayload, onChunk);",
+      ].join("\n"),
+    );
+    if (next === source) throw new Error(`owner runtime patch target not found: ${qqExecutor}`);
+    next += `
+
+// BIGFISH_QQ_OWNER_RUNTIME
+function bigFishRememberMessageOwner(sessionId, text) {
+    globalThis.__bigfishQqOwnerBySession ??= new Map();
+    globalThis.__bigfishQqOwnerBySession.set(
+        sessionId,
+        /(?:^|\\r?\\n)is_owner=true(?:\\r?\\n|$)/.test(String(text || '')),
+    );
+}
+`;
+    await writeFile(qqExecutor, next, "utf8");
+    console.log(`patched QQ owner runtime metadata: ${qqExecutor}`);
+  } else {
+    console.log(`already patched QQ owner runtime metadata: ${qqExecutor}`);
+  }
+}
+
+await patch(
+  qqExecutor,
+  "BIGFISH_QQ_EMPTY_REPLY",
+  (source) =>
+    source.replace(
+      "        const finalText = text ?? '(agent produced no text)';",
+      [
+        "        // BIGFISH_QQ_EMPTY_REPLY",
+        "        const finalText = text?.trim() || '我这轮没整理出话，再叫我一次。';",
+      ].join("\n"),
+    ),
+);
 
 for (const browserPlugin of browserPlugins) {
   await patch(

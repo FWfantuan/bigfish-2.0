@@ -39,22 +39,11 @@ function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
                 .split(',').map((value) => value.trim()).filter(Boolean);
             if (!allowedGroups.includes(String(groupId)))
                 throw new Error('当前群不在自动游戏白名单');
-            const events = Array.isArray(exec.agent?.session?.events) ? exec.agent.session.events : [];
-            let isOwner = false;
-            for (let index = events.length - 1; index >= 0; index -= 1) {
-                const event = events[index];
-                if (event?.type !== 'user/message')
-                    continue;
-                const text = (event.data?.content || [])
-                    .filter((block) => block?.type === 'text')
-                    .map((block) => block.text || '')
-                    .join('\n');
-                if (!text.includes('is_owner='))
-                    continue;
-                isOwner = /(?:^|\n)is_owner=true(?:\n|$)/.test(text)
-                    && text.includes(`group_id=${groupId}`);
-                break;
-            }
+            // BIGFISH_QQ_OWNER_CONTEXT
+            // The live DSH session does not expose the current user message in
+            // session.events at tool execution time. The executor records the
+            // platform-derived owner flag for this session before delivery.
+            const isOwner = globalThis.__bigfishQqOwnerBySession?.get(sessionId) === true;
             if (!isOwner)
                 throw new Error('只有主人本人明确要求时才能触发自动游戏');
             const [{ mkdir, rename, writeFile }, { dirname, resolve }] = await Promise.all([

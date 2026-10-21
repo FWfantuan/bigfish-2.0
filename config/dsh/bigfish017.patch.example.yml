@@ -16,7 +16,7 @@
       commandPrefix: ""
       mode: whitelist
     agent:
-      preset: dsh-qq-bridge
+      preset: bigfish-chat
       provider: deepseek-official
       model: deepseek-v4-flash
       cwd: .

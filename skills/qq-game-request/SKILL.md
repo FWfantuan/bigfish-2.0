@@ -15,3 +15,4 @@ When the owner explicitly says to go play, such as “去玩明日方舟” or �
 - Do not use this tool for a question about a game, a hypothetical, or ordinary discussion.
 - Routine cooldown may be bypassed by this authenticated owner request. Payment, purchase, ads, account changes, privacy prompts, and other safety limits are never bypassed.
 - After the tool returns `queued: true`, tell the owner that the play worker has been dispatched. Only claim the game opened after `mumud` reports a real launch or screenshot.
+- The gameplay worker is asynchronous. End the QQ turn immediately after a successful queue instead of waiting for or polling the game session. A tool error should be reported as-is without a source-code investigation loop.
