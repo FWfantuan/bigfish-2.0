@@ -16,7 +16,7 @@
       commandPrefix: ""
       mode: whitelist
     agent:
-      preset: standard
+      preset: dsh-qq-bridge
       provider: deepseek-official
       model: deepseek-v4-flash
       cwd: .

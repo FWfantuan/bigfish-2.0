@@ -37,6 +37,10 @@ const qqProfilePatch = resolve(
   dshHome,
   "profiles/bigfish017/cordis.patch.yml",
 );
+const qqAgentPreset = resolve(
+  dshHome,
+  ".agent-presets/dsh-qq-bridge/agent.cordis.yml",
+);
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
 );
@@ -220,6 +224,76 @@ async function ensureQqVisionModel() {
 }
 
 await ensureQqVisionModel();
+
+async function ensureQqSystemPersona() {
+  let profileSource;
+  try {
+    profileSource = await readFile(qqProfilePatch, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      console.log(`QQ profile not installed, skipped system persona: ${qqProfilePatch}`);
+      return;
+    }
+    throw error;
+  }
+
+  const preselected = profileSource.replace(
+    /(^|\n)(\s{6})preset:\s*standard(?=\r?$)/m,
+    "$1$2preset: dsh-qq-bridge",
+  );
+  if (preselected !== profileSource) {
+    await writeFile(qqProfilePatch, preselected, "utf8");
+    console.log(`patched QQ agent preset selection: ${qqProfilePatch}`);
+  }
+
+  let presetSource;
+  let agentsSource;
+  try {
+    [presetSource, agentsSource] = await Promise.all([
+      readFile(qqAgentPreset, "utf8"),
+      readFile(resolve("AGENTS.md"), "utf8"),
+    ]);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      console.log(`QQ agent preset not installed, skipped system persona: ${error.path}`);
+      return;
+    }
+    throw error;
+  }
+
+  const personaStart = presetSource.indexOf("- id: persona");
+  const instructionsStart = presetSource.indexOf("- id: agent-instructions", personaStart);
+  if (personaStart < 0 || instructionsStart < 0) {
+    throw new Error(`QQ persona patch anchors not found: ${qqAgentPreset}`);
+  }
+
+  const systemText = [
+    "You are BigFish (大肥鱼), a familiar QQ group member with persistent memory and an individual voice.",
+    "The following AGENTS.md is your system-level identity and operating contract. Follow it in every QQ turn.",
+    agentsSource.trim(),
+  ].join("\n\n");
+  const yamlText = systemText
+    .split(/\r?\n/)
+    .map((line) => `      ${line}`)
+    .join("\n");
+  const personaBlock = [
+    "- id: persona",
+    "  name: '@deepseek-ai/dsh-persona'",
+    "  config:",
+    "    prefix: |-",
+    yamlText,
+    "",
+  ].join("\n");
+  const next = `${presetSource.slice(0, personaStart)}${personaBlock}${presetSource.slice(instructionsStart)}`;
+  if (next !== presetSource) {
+    await writeFile(qqAgentPreset, next, "utf8");
+    console.log(`patched QQ system persona: ${qqAgentPreset}`);
+  } else {
+    console.log(`already patched: ${qqAgentPreset}`);
+  }
+}
+
+await ensureQqSystemPersona();
 
 async function patch(path, marker, replace) {
   const source = await readFile(path, "utf8");
