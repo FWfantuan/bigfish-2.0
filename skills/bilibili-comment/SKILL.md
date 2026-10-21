@@ -11,6 +11,12 @@ Use `bilibili_search` to find the video, `bilibili_video` for metadata,
 details matter. Use browser tools to inspect the real comment section when
 needed.
 
+In a QQ group session, when the user explicitly asks to see video frames,
+call `bigfish_send_bili_frames` with the bvid and a count of 1–6. This tool
+extracts real frames and sends the images directly to the current QQ
+conversation. Report the images as sent only after the tool returns
+`sent: true`.
+
 Before drafting a comment:
 
 1. Identify the exact video by title and bvid.

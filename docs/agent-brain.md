@@ -35,6 +35,8 @@ QQ 直聊 / replyd / sociald
 
 普通事实搜索是例外：`sociald`、`replyd` 和私聊 Agent 可以直接调用 DeepSeek `web_search`，但配置为 `fetch: false`，不能打开网页或抓取全文。小说、漫画、长文阅读和视频播放仍必须经过工具审批。
 
+获批后的 QQ 视频查看可以调用 `bigfish_send_bili_frames`。该工具从 B站视频均匀抽取 1～6 张 JPEG 关键帧，再以 QQ 图片消息发回当前白名单群或主人私聊；只能发送 `data/media/frames` 中由抽帧器生成的文件。
+
 ## 启动
 
 ```powershell

@@ -19,6 +19,7 @@ const qqAgentHandler = resolve(
   dshHome,
   "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/handlers/agent.js",
 );
+const qqFramesSnippet = resolve("patches/qq-frames-tool.snippet.js");
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
 );
@@ -171,6 +172,49 @@ await patch(
       ].join("\n"),
     ),
 );
+
+{
+  const source = await readFile(qqPlugin, "utf8");
+  if (!source.includes("bigfishSessionTargets")) {
+    const snippet = await readFile(qqFramesSnippet, "utf8");
+    let next = source
+      .replace(
+        "import { probeNapcatLogin } from './napcat-tags.js';",
+        [
+          "import { probeNapcatLogin } from './napcat-tags.js';",
+          "import { defineTool } from '@deepseek-ai/dsh-tools';",
+          "import { readFile } from 'node:fs/promises';",
+          "import { resolve } from 'node:path';",
+          "import { pathToFileURL } from 'node:url';",
+          "const bigfishSessionTargets = new Map();",
+        ].join("\n"),
+      )
+      .replace(
+        "export const inject = ['agentLoop', 'agentPresets', 'sessionQuery'];",
+        "export const inject = ['agentLoop', 'agentPresets', 'sessionQuery', 'tools'];",
+      )
+      .replace(
+        "            await attachWorkspace?.(options.sessionId, cwd);",
+        "            bigfishSessionTargets.set(options.sessionId, options.sessionKey);\n            await attachWorkspace?.(options.sessionId, cwd);",
+      )
+      .replace(
+        "    const webActivity = DshWebActivityGate.register(ctx);",
+        "    const webActivity = DshWebActivityGate.register(ctx);\n    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);",
+      )
+      .replace(
+        "        webActivity.dispose();",
+        "        webActivity.dispose();\n        unregisterBigFishFrames?.();",
+      );
+    if (!next.includes("bigfishSessionTargets") || !next.includes("bigfish_send_bili_frames")) {
+      next += `\n${snippet}\n`;
+    }
+    if (next === source) throw new Error(`patch target not found: ${qqPlugin}`);
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`patched: ${qqPlugin}`);
+  } else {
+    console.log(`already patched: ${qqPlugin}`);
+  }
+}
 
 const executorSource = await readFile(qqExecutor, "utf8");
 if (!executorSource.includes("BIGFISH_BRAIN_CONTEXT")) {
