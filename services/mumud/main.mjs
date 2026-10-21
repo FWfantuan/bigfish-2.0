@@ -97,7 +97,8 @@ const runtimeStatus = {
     maa: {
       enabled: maaConfig.enabled !== false,
       status: "not-probed",
-      safeTasks: maaConfig.taskAllowlist || [],
+      autoTasks: Object.keys(maaConfig.safeTasks || {}),
+      allowedManualTasks: maaConfig.taskAllowlist || [],
     },
   },
   explanation:
@@ -492,7 +493,8 @@ async function playWithMaa({
     cliVersion: maaProbe.cliVersion || null,
     coreVersion: maaProbe.coreVersion || null,
     reason: maaProbe.reason,
-    safeTasks: allowlist,
+    autoTasks: Object.keys(maaConfig.safeTasks || {}),
+    allowedManualTasks: allowlist,
   };
   await saveStatus();
   if (!maaProbe.available) {
@@ -748,10 +750,11 @@ async function publishRuntimeCapabilities() {
     cliVersion: maaProbe.cliVersion || null,
     coreVersion: maaProbe.coreVersion || null,
     reason: maaProbe.reason,
-    safeTasks: maaConfig.taskAllowlist || [],
+    autoTasks: Object.keys(maaConfig.safeTasks || {}),
+    allowedManualTasks: maaConfig.taskAllowlist || [],
   };
   await saveStatus();
-  const fact = `能力状态以 data/mumud/status.json 为准：QQ 聊天层和 bigfish-play 自动游戏层均使用 deepseek-v4-flash-vision-exp。MAA 引擎状态为 ${runtimeStatus.capabilities.maa.status}${maaProbe.coreVersion ? `，MaaCore ${maaProbe.coreVersion}` : ""}，只开放安全任务 ${(maaConfig.taskAllowlist || []).join("、") || "无"}。QQ 用户图片会保存到 data/qq-images，Android 截图也已验证为真实图像输入。横屏点击坐标按 SurfaceOrientation 修复；公开攻略 web_search 已启用且 fetch=false，Tesseract 不是必需。旧结论“QQ 文本模型读不了图”“图像输入未接通”“Unity 黑屏”“坐标偏移未解决”均已被当前能力修复取代。`;
+  const fact = `能力状态以 data/mumud/status.json 为准：QQ 聊天层和 bigfish-play 自动游戏层均使用 deepseek-v4-flash-vision-exp。MAA 引擎状态为 ${runtimeStatus.capabilities.maa.status}${maaProbe.coreVersion ? `，MaaCore ${maaProbe.coreVersion}` : ""}；不会自动启动 MAA 日常或固定关卡，允许手动白名单任务 ${(maaConfig.taskAllowlist || []).join("、") || "无"}。QQ 用户图片会保存到 data/qq-images，Android 截图也已验证为真实图像输入。横屏点击坐标按 SurfaceOrientation 修复；公开攻略 web_search 已启用且 fetch=false，Tesseract 不是必需。旧结论“QQ 文本模型读不了图”“图像输入未接通”“Unity 黑屏”“坐标偏移未解决”均已被当前能力修复取代。`;
   await brain.replaceFacts(brainScope(), "verified_runtime_capability", [{
     text: fact,
     confidence: 1,
