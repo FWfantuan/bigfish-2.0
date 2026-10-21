@@ -17,6 +17,8 @@ const execFileAsync = promisify(execFile);
 const SERIAL_PATTERN = /^[A-Za-z0-9.:_-]+$/;
 const UI_ANCHORS = {
   confirm: [0.925, 0.944],
+  squad_confirm: [0.134, 0.829],
+  walk_forward: [0.925, 0.80],
   cancel: [0.756, 0.944],
   pause_toggle: [0.944, 0.061],
   speed_toggle: [0.867, 0.068],
@@ -474,7 +476,7 @@ export function createBigFishArknightsTools() {
         direction: gesture.direction,
         changed: before.digest !== after.digest,
         resumedBeforeAction: resumeBeforeAction,
-        pausedAfterAction,
+        pausedAfterAction: pauseAfterAction,
         postActionScreenshotPath,
       };
     },
@@ -489,7 +491,8 @@ export function createBigFishArknightsTools() {
     name: "arknights_press_ui",
     description:
       "Press a stable Arknights 16:9 UI anchor and verify that the screen changed. Use confirm for "
-      + "standard right-bottom confirmation buttons such as recruitment confirmation. This replaces "
+      + "standard right-bottom confirmation buttons such as recruitment confirmation. Use squad_confirm for "
+      + "the green check on the selected opening squad card, and walk_forward for the purple lower-right map travel button. This replaces "
       + "guessing the button center from a scaled image. pause_toggle and speed_toggle are for observation; "
       + "use arknights_maa_action for deployments because its MAA profile pauses automatically.",
     parameters: {
