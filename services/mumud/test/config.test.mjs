@@ -30,3 +30,11 @@ test("the configured observer may share without a total image cap", async () => 
   assert.equal(mode.observation.maxShares, 0);
   assert.ok(mode.observation.intervalMs >= 60_000);
 });
+
+test("autonomous play uses a short cooldown and does not require a new permission prompt", async () => {
+  const gameplay = JSON.parse(await readFile("config/gameplay.json", "utf8"));
+
+  assert.ok(gameplay.cooldownMinutes <= 10);
+  assert.match(gameplay.autonomy.objective, /不需要每次等主人说“去玩吧”/);
+  assert.match(gameplay.autonomy.objective, /只结束当前这一局/);
+});

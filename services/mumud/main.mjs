@@ -210,7 +210,7 @@ async function chooseAndPlay(device, now, ownerRequest = null) {
   const scope = brainScope();
   const thirdPartyPackages = await adbRun(device, ["shell", "pm", "list", "packages", "-3"])
     .then(parsePackages);
-  state.lastSessionAt = now;
+  state.lastDecisionAt = now;
   await saveState();
 
   if (thirdPartyPackages.length === 0) {
@@ -230,6 +230,8 @@ async function chooseAndPlay(device, now, ownerRequest = null) {
       webSearch: autonomy.webSearch !== false,
       forbiddenActions: autonomy.forbiddenActions || [],
     };
+    state.lastSessionAt = now;
+    state.lastDecisionAt = now;
     runtimeStatus.currentTarget = { name: target.name, packageName: configured.packageName };
     await saveStatus();
     state.running = true;
@@ -285,6 +287,8 @@ async function chooseAndPlay(device, now, ownerRequest = null) {
     webSearch: autonomy.webSearch !== false,
     forbiddenActions: autonomy.forbiddenActions || [],
   };
+  state.lastSessionAt = now;
+  state.lastDecisionAt = now;
   runtimeStatus.currentTarget = { name: target.name, packageName: choice.packageName };
   await saveStatus();
   state.running = true;

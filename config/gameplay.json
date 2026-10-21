@@ -3,7 +3,7 @@
   "pollMs": 5000,
   "notifyGroupEnv": "BIGFISH_PLAY_GROUP",
   "autoLaunchEmulator": false,
-  "cooldownMinutes": 60,
+  "cooldownMinutes": 10,
   "missingGameReminderMinutes": 360,
   "gameAliases": {
     "明日方舟": "com.hypergryph.arknights",
@@ -23,7 +23,7 @@
     "maxSessionMinutes": 12,
     "maxActions": 30,
     "webSearch": true,
-    "objective": "像自己真心想玩一样探索当前游戏，能玩就连续玩，卡住或界面不确定就停。",
+    "objective": "像自己真心想玩一样探索当前游戏。安全自主游玩已经授权，不需要每次等主人说“去玩吧”；主人说“别玩了”只结束当前这一局，不是永久禁令。能玩就继续玩，卡住或界面不确定就停。",
     "forbiddenActions": [
       "充值",
       "购买",

@@ -71,6 +71,17 @@ test("running sessions are never started twice", () => {
   );
 });
 
+test("a skipped decision cools down without pretending a game session started", () => {
+  const now = 2_000_000;
+  const skipped = { lastSessionAt: 0, lastDecisionAt: now };
+  assert.deepEqual(sessionGate(skipped, now + 60_000, 10), {
+    allowed: false,
+    reason: "cooldown",
+    remainingMs: 9 * 60_000,
+  });
+  assert.equal(sessionGate(skipped, now + 11 * 60_000, 10).allowed, true);
+});
+
 test("autonomous choice accepts an installed package and preserves the agent's reason", () => {
   const choice = normalizeGameChoice({
     action: "play",
@@ -114,6 +125,8 @@ test("game choice prompt gives BigFish freedom instead of prescribing a game", (
   });
   assert.match(prompt, /可以重温喜欢的东西/);
   assert.match(prompt, /也可以觉得现在没兴致而选择不玩/);
+  assert.match(prompt, /不需要每次重新等一句“去玩吧”/);
+  assert.match(prompt, /只表示结束当次游戏，不是永久禁令/);
   assert.match(prompt, /com\.example\.game/);
 });
 
