@@ -388,14 +388,20 @@ async function ensureQqSystemPersona() {
 
 await ensureQqSystemPersona();
 
-async function patch(path, marker, replace) {
+async function patch(path, marker, replace, { allowMissing = false } = {}) {
   const source = await readFile(path, "utf8");
   if (source.includes(marker)) {
     console.log(`already patched: ${path}`);
     return;
   }
   const next = replace(source);
-  if (next === source) throw new Error(`patch target not found: ${path}`);
+  if (next === source) {
+    if (allowMissing) {
+      console.warn(`patch target no longer present, treating as already applied: ${path}`);
+      return;
+    }
+    throw new Error(`patch target not found: ${path}`);
+  }
   await writeFile(path, next, "utf8");
   console.log(`patched: ${path}`);
 }
@@ -448,6 +454,20 @@ for (const androidHostPlugin of androidHostPlugins) {
   const registrationBlock = [
     "    disposers.push(ctx.effect(() => {",
     "        const disposeMaaAction = hostCtx.tools.register(bigfishArknightsTools.arknightsMaaAction);",
+    "        const disposeScreenDeploy = hostCtx.tools.register(bigfishArknightsTools.arknightsScreenDeploy);",
+    "        const disposePressUi = hostCtx.tools.register(bigfishArknightsTools.arknightsPressUi);",
+    "        const disposeAskOwner = hostCtx.tools.register(bigfishArknightsTools.arknightsAskOwner);",
+    "        return () => {",
+    "            disposeAskOwner();",
+    "            disposePressUi();",
+    "            disposeScreenDeploy();",
+    "            disposeMaaAction();",
+    "        };",
+    "    }, 'bigfish-arknights:semantic-actions'));",
+  ].join("\n");
+  const previousRegistrationBlock = [
+    "    disposers.push(ctx.effect(() => {",
+    "        const disposeMaaAction = hostCtx.tools.register(bigfishArknightsTools.arknightsMaaAction);",
     "        const disposePressUi = hostCtx.tools.register(bigfishArknightsTools.arknightsPressUi);",
     "        const disposeAskOwner = hostCtx.tools.register(bigfishArknightsTools.arknightsAskOwner);",
     "        return () => {",
@@ -471,7 +491,9 @@ for (const androidHostPlugin of androidHostPlugins) {
     const source = await readFile(profile.index, "utf8");
     let next = source;
     if (profile.profile === "bigfish-play") {
-      next = next.replace(legacyRegistrationBlock, registrationBlock);
+      next = next
+        .replace(previousRegistrationBlock, registrationBlock)
+        .replace(legacyRegistrationBlock, registrationBlock);
       if (!next.includes(marker)) {
         next = next
           .replace(
@@ -505,7 +527,8 @@ for (const androidHostPlugin of androidHostPlugins) {
         .replace(`${marker}\n${importLine}\n`, "")
         .replace(`\n${importLine}`, "")
         .replace(`\n${instanceLine}`, "")
-        .replace(`\n${registrationBlock}`, "");
+        .replace(`\n${registrationBlock}`, "")
+        .replace(`\n${previousRegistrationBlock}`, "");
     }
     if (next !== source) {
       const temporary = `${profile.index}.bigfish.tmp`;
@@ -606,6 +629,7 @@ await patch(
         "await ctx.agentPresets.mount(agentCtx, agentCfg.preset);",
         "await ctx.agentPresets.mount(agentCtx, requestedPreset);",
       ),
+  { allowMissing: true },
 );
 
 await patch(
@@ -878,8 +902,19 @@ await patch(
 
 {
   const source = await readFile(qqPlugin, "utf8");
-  if (!source.includes("bigfishSessionTargets")) {
-    const snippet = await readFile(qqFramesSnippet, "utf8");
+  const snippet = await readFile(qqFramesSnippet, "utf8");
+  if (source.includes("// BIGFISH_QQ_FRAMES_TOOL")) {
+    const next = source.replace(
+      /\/\/ BIGFISH_QQ_FRAMES_TOOL[\s\S]*?(?=\n\/\/ BIGFISH_QQ_GAME_REQUEST_TOOL|$)/,
+      `${snippet.trimEnd()}\n`,
+    );
+    if (next === source) {
+      console.log(`already patched frames: ${qqPlugin}`);
+    } else {
+      await writeFile(qqPlugin, next, "utf8");
+      console.log(`updated frames: ${qqPlugin}`);
+    }
+  } else if (!source.includes("bigfishSessionTargets")) {
     let next = source
       .replace(
         "import { probeNapcatLogin } from './napcat-tags.js';",
@@ -915,7 +950,7 @@ await patch(
     await writeFile(qqPlugin, next, "utf8");
     console.log(`patched: ${qqPlugin}`);
   } else {
-    console.log(`already patched: ${qqPlugin}`);
+    throw new Error(`frames tool marker missing while base patch exists: ${qqPlugin}`);
   }
 }
 

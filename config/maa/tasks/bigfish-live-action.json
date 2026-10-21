@@ -1,0 +1,36 @@
+{
+  "tasks": [
+    {
+      "name": "BigFish set current Arknights stage",
+      "type": "SingleStep",
+      "params": {
+        "type": "copilot",
+        "subtype": "stage",
+        "details": {
+          "stage_name": "ISW-NO"
+        }
+      }
+    },
+    {
+      "name": "BigFish Deploy",
+      "type": "SingleStep",
+      "params": {
+        "type": "copilot",
+        "subtype": "action",
+        "details": {
+          "actions": [
+            {
+              "type": "Deploy",
+              "direction": "Right",
+              "location": [
+                1,
+                2
+              ],
+              "name": "预备干员-重装"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

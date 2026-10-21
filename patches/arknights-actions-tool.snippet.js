@@ -9,6 +9,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import {
   ARKNIGHTS_ACTION_TYPES,
   ARKNIGHTS_DIRECTIONS,
+  buildScreenDeployGesture,
   buildMaaArknightsSingleStepTask,
 } from "./bigfish-arknights-action-core.mjs";
 
@@ -99,6 +100,55 @@ async function adbScreenshot(serial) {
     bytes,
     digest: createHash("sha256").update(bytes).digest("hex"),
   };
+}
+
+async function adbDisplaySize(serial) {
+  const adb = process.env.ADB || "adb";
+  const result = await execFileAsync(
+    adb,
+    ["-s", serial, "shell", "wm", "size"],
+    {
+      windowsHide: true,
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    },
+  );
+  const sizes = [...String(result.stdout || "").matchAll(/(\d+)\s*x\s*(\d+)/g)];
+  const selected = sizes.at(-1);
+  if (!selected) throw new Error("could not determine Android display size");
+  return {
+    width: Number(selected[1]),
+    height: Number(selected[2]),
+  };
+}
+
+async function adbTap(serial, point) {
+  const adb = process.env.ADB || "adb";
+  await execFileAsync(
+    adb,
+    ["-s", serial, "shell", "input", "tap", String(point.x), String(point.y)],
+    {
+      windowsHide: true,
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    },
+  );
+}
+
+async function adbSwipe(serial, from, to) {
+  const adb = process.env.ADB || "adb";
+  await execFileAsync(
+    adb,
+    [
+      "-s", serial, "shell", "input", "swipe",
+      String(from.x), String(from.y), String(to.x), String(to.y), "220",
+    ],
+    {
+      windowsHide: true,
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    },
+  );
 }
 
 async function saveScreenshot(bytes, prefix) {
@@ -312,6 +362,129 @@ export function createBigFishArknightsTools() {
     }),
   });
 
+  const screenDeploy = defineTool({
+    name: "arknights_deploy_screen",
+    description:
+      "Deploy one Arknights operator using normalized screenshot coordinates when a roguelike map has no known MAA stageName or map grid. "
+      + "BigFish chooses the visible operator card and target tile from the current screenshot. The tool resumes a manually paused battle, "
+      + "taps the card and tile, selects the facing direction, then pauses and returns a fresh screenshot. Use one deployment at a time "
+      + "and visually verify the postActionScreenshotPath before claiming success.",
+    parameters: {
+      serial: {
+        type: "string",
+        required: true,
+        description: "Online ADB serial, e.g. 127.0.0.1:16384",
+      },
+      operatorName: {
+        type: "string",
+        description: "Operator name visible on the selected card, for traceability.",
+      },
+      cardPoint: {
+        type: "array",
+        required: true,
+        items: { type: "number" },
+        description: "Normalized [x, y] center of the operator card in the current screenshot, each from 0 to 1.",
+      },
+      tilePoint: {
+        type: "array",
+        required: true,
+        items: { type: "number" },
+        description: "Normalized [x, y] center of the target battle tile in the current screenshot, each from 0 to 1.",
+      },
+      direction: {
+        type: "string",
+        required: true,
+        enum: ARKNIGHTS_DIRECTIONS,
+        description: "Facing direction selected after tapping the deployment tile.",
+      },
+      resumeBeforeAction: {
+        type: "boolean",
+        description: "Set true when the current screenshot is the manual PAUSE overlay.",
+      },
+      pauseAfterAction: {
+        type: "boolean",
+        description: "Pause again after deployment for protected visual verification. Recommended true.",
+      },
+    },
+    output: {
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          ok: { type: "boolean", required: true },
+          serial: { type: "string", required: true },
+          operatorName: { type: "string", required: true },
+          direction: { type: "string", required: true },
+          changed: { type: "boolean", required: true },
+          resumedBeforeAction: { type: "boolean", required: true },
+          pausedAfterAction: { type: "boolean", required: true },
+          postActionScreenshotPath: { type: "string", required: true },
+        },
+      },
+      render: (_args, value) => [{
+        type: "text",
+        text: JSON.stringify(value, null, 2),
+      }],
+    },
+    timeoutMs: 45_000,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const serial = String(args.serial || "").trim();
+      if (!SERIAL_PATTERN.test(serial)) throw new Error("invalid ADB serial");
+      const size = await adbDisplaySize(serial);
+      const gesture = buildScreenDeployGesture({
+        cardPoint: args.cardPoint,
+        tilePoint: args.tilePoint,
+        direction: args.direction,
+        width: size.width,
+        height: size.height,
+      });
+      const before = await adbScreenshot(serial);
+      const pausePoint = {
+        x: Math.round(UI_ANCHORS.pause_toggle[0] * size.width),
+        y: Math.round(UI_ANCHORS.pause_toggle[1] * size.height),
+      };
+      const resumeBeforeAction = args.resumeBeforeAction === true;
+      const pauseAfterAction = args.pauseAfterAction === true;
+      if (resumeBeforeAction) {
+        await adbTap(serial, pausePoint);
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 300));
+      }
+      await adbTap(serial, gesture.card);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+      await adbTap(serial, gesture.tile);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 180));
+      if (gesture.direction !== "None") {
+        await adbSwipe(serial, gesture.tile, gesture.end);
+      }
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 800));
+      if (pauseAfterAction) {
+        await adbTap(serial, pausePoint);
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+      }
+      const after = await adbScreenshot(serial);
+      const postActionScreenshotPath = await saveScreenshot(
+        after.bytes,
+        "arknights-screen-deploy",
+      );
+      return {
+        ok: true,
+        serial,
+        operatorName: String(args.operatorName || "").trim().slice(0, 80),
+        direction: gesture.direction,
+        changed: before.digest !== after.digest,
+        resumedBeforeAction,
+        pausedAfterAction,
+        postActionScreenshotPath,
+      };
+    },
+    presentCall: (args) => ({
+      card: "generic",
+      title: `Deploy ${args.operatorName || "operator"} at screen tile`,
+      kind: "execute",
+    }),
+  });
+
   const pressUi = defineTool({
     name: "arknights_press_ui",
     description:
@@ -515,6 +688,7 @@ export function createBigFishArknightsTools() {
 
   return {
     arknightsMaaAction: maaAction,
+    arknightsScreenDeploy: screenDeploy,
     arknightsPressUi: pressUi,
     arknightsAskOwner: askOwner,
   };

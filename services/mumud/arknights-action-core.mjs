@@ -52,6 +52,60 @@ function normalizeStageName(value) {
   return stageName;
 }
 
+export function normalizeScreenPoint(value, name = "point") {
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw new Error(`${name} must be [x, y]`);
+  }
+  const point = value.map((coordinate) => Number(coordinate));
+  if (point.some((coordinate) => !Number.isFinite(coordinate) || coordinate < 0 || coordinate > 1)) {
+    throw new Error(`${name} coordinates must be normalized from 0 to 1`);
+  }
+  return point;
+}
+
+export function buildScreenDeployGesture({
+  cardPoint,
+  tilePoint,
+  direction,
+  width,
+  height,
+}) {
+  const screenWidth = boundedInteger(width, "width", 320, 16_384);
+  const screenHeight = boundedInteger(height, "height", 240, 16_384);
+  const card = normalizeScreenPoint(cardPoint, "cardPoint");
+  const tile = normalizeScreenPoint(tilePoint, "tilePoint");
+  const normalizedDirection = String(direction || "None").trim();
+  if (!DIRECTIONS.has(normalizedDirection)) {
+    throw new Error("direction must be Left, Right, Up, Down or None");
+  }
+  const vectors = {
+    Left: [-1, 0],
+    Right: [1, 0],
+    Up: [0, -1],
+    Down: [0, 1],
+    None: [0, 0],
+  };
+  const cardPixels = {
+    x: Math.round(card[0] * screenWidth),
+    y: Math.round(card[1] * screenHeight),
+  };
+  const tilePixels = {
+    x: Math.round(tile[0] * screenWidth),
+    y: Math.round(tile[1] * screenHeight),
+  };
+  const distance = Math.round(Math.min(screenWidth, screenHeight) * 0.09);
+  const [dx, dy] = vectors[normalizedDirection];
+  return {
+    card: cardPixels,
+    tile: tilePixels,
+    direction: normalizedDirection,
+    end: {
+      x: Math.max(0, Math.min(screenWidth - 1, tilePixels.x + dx * distance)),
+      y: Math.max(0, Math.min(screenHeight - 1, tilePixels.y + dy * distance)),
+    },
+  };
+}
+
 export function normalizeMaaArknightsAction(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("action must be an object");

@@ -87,6 +87,14 @@ conditions.
 `Retreat`, `SpeedUp`, `BulletTime`, `SkillUsage` or `SetUnitLocation`; static
 confirmation buttons use the separate `arknights_press_ui` tool.
 
+Randomized roguelike maps may not have a known MAA stage name or map grid even
+though the battle is visible. Those battles use `arknights_deploy_screen`: the
+vision model selects normalized points for one operator card and one visible
+tile, chooses the facing direction, and the tool resumes a manual pause, taps
+the two points, swipes the direction, pauses again, and returns a verification
+screenshot. A paused battle may be observed twice; the worker must then deploy,
+ask the owner, or stop instead of taking more identical screenshots.
+
 MAA resources may be read as knowledge and low-level recognition/action ideas,
 but `arknights-roguelike-*` task IDs are not present in the executable
 allowlist. This prevents MAA from silently making the strategic choices that

@@ -38,6 +38,10 @@ test("gameplay final reports and strategic questions are wired to screenshots", 
   assert.doesNotMatch(main, /我刚刚突然想玩/);
   assert.doesNotMatch(main, /buildMaaQqSummary/);
   assert.match(tools, /arknights_ask_owner/);
+  assert.match(tools, /arknights_deploy_screen/);
+  assert.match(tools, /cardPoint/);
+  assert.match(tools, /tilePoint/);
+  assert.match(tools, /buildScreenDeployGesture/);
   assert.match(tools, /opening squad\/operators/);
   assert.match(tools, /--log-file=\$\{logPath\}/);
   assert.match(tools, /details\?\.actions\?\.\[0\]\?\.type/);

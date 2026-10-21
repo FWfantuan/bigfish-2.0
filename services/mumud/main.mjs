@@ -115,6 +115,7 @@ const runtimeStatus = {
     coordinateVerified: true,
     arknightsActions: {
       maaSingleStep: true,
+      screenOperatorDeployment: true,
       deploymentWithPause: false,
       semanticUiAnchors: true,
       ownerQuestionBridge: true,

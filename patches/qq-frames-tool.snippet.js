@@ -10,6 +10,8 @@ function registerBigFishFramesTool(ctx, client, cfg, officialMode) {
         parameters: {
             bvid: { type: 'string', required: true, description: 'Bilibili BV id, for example BV1fwnv6nEYb.' },
             count: { type: 'number', description: 'Number of frames, 1-6. Default 1; use more only when the owner explicitly requests multiple images.' },
+            page: { type: 'number', description: 'Optional Bilibili part/page number, starting at 1. Use the exact P the owner names.' },
+            timestamp_seconds: { type: 'number', description: 'Optional exact timestamp in seconds, covering the entire video or selected part. Use this when the owner names a time.' },
             caption: { type: 'string', description: 'Optional short text sent after the images.' },
         },
         output: {
@@ -50,6 +52,10 @@ function registerBigFishFramesTool(ctx, client, cfg, officialMode) {
             const result = await extractBilibiliFrames({
                 bvid: String(args.bvid),
                 count: Math.max(1, Math.min(6, Number(args.count || 1))),
+                page: Math.max(1, Math.trunc(Number(args.page || 1))),
+                timestampSeconds: Number.isFinite(Number(args.timestamp_seconds))
+                    ? Number(args.timestamp_seconds)
+                    : null,
             });
             const message = [];
             for (const frame of result.frames) {
