@@ -32,12 +32,29 @@ export class BrainClient {
     return this.request("/v1/events", { method: "POST", body: { scope, kind, content, success } });
   }
 
+  fact(scope, text, options = {}) {
+    return this.request("/v1/facts", {
+      method: "POST",
+      body: {
+        scope,
+        text,
+        confidence: options.confidence ?? 0.8,
+        importance: options.importance ?? 0.6,
+        source: options.source || "runtime_fact",
+      },
+    });
+  }
+
   action(scope, kind, payload, result, success = true) {
     return this.request("/v1/actions", { method: "POST", body: { scope, kind, payload, result, success } });
   }
 
   goal(scope, title, detail = "", priority = 3) {
     return this.request("/v1/goals", { method: "POST", body: { scope, title, detail, priority } });
+  }
+
+  updateGoal(id, update) {
+    return this.request(`/v1/goals/${encodeURIComponent(id)}`, { method: "PATCH", body: update });
   }
 
   skillContext(scope) {

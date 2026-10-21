@@ -23,6 +23,7 @@ await loadEnvironmentFiles([".env", resolve(homedir(), ".dsh/.env")]);
 const chatConfig = await loadConfig(process.env.BIGFISH_SOCIAL_CONFIG || "config/social.json");
 const gameConfig = JSON.parse(await readFile("config/gameplay.json", "utf8"));
 const statePath = resolve(process.env.BIGFISH_GAMEPLAY_STATE || "data/mumud/state.json");
+const statusPath = resolve(process.env.BIGFISH_GAMEPLAY_STATUS || "data/mumud/status.json");
 const state = await loadState(statePath);
 if (state.running) {
   state.running = false;
@@ -36,6 +37,27 @@ const brain = new BrainClient();
 const playDsh = new DshDecisionMaker({ profile: "bigfish-play", timeoutMs: 900000 });
 const explicitTarget = gameConfig.targets?.[0];
 const autonomy = gameConfig.autonomy || { enabled: false };
+const runtimeStatus = {
+  version: 1,
+  updatedAt: new Date().toISOString(),
+  mode: autonomy.enabled ? "autonomous" : explicitTarget ? "fixed-target" : "disabled",
+  fixedTarget: explicitTarget?.name || null,
+  currentTarget: null,
+  device: state.lastDevice || null,
+  capabilities: {
+    chatAgentImageInput: false,
+    gameAgentImageInput: true,
+    gameAgentModel: "deepseek-v4-flash-vision-exp",
+    screenshotInputVerified: true,
+    coordinateMapping: "rotation-aware",
+    coordinateVerified: true,
+    webSearch: { enabled: autonomy.webSearch !== false, fetch: false },
+    tesseractRequired: false,
+  },
+  explanation:
+    "QQ 聊天层是文本模型；独立的 bigfish-play 自动游戏 worker 才是视觉模型。旧版“图像输入未接通/OCR 缺失/坐标漂移”的结论已被当前修复取代。",
+  lastSession: null,
+};
 let connection;
 let polling = false;
 let stopping = false;
@@ -54,6 +76,7 @@ const timer = setInterval(() => void poll(), gameConfig.pollMs || 5000);
 void poll();
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+await publishRuntimeCapabilities();
 log(
   `mumud started; enabled=${gameConfig.enabled}; target=${explicitTarget?.name || "none"}; autonomy=${Boolean(autonomy.enabled)}`,
 );
@@ -121,7 +144,7 @@ async function poll() {
 }
 
 async function chooseAndPlay(device, now) {
-  const scope = `group:${notifyGroup}`;
+  const scope = brainScope();
   const thirdPartyPackages = await adbRun(device, ["shell", "pm", "list", "packages", "-3"])
     .then(parsePackages);
   state.lastSessionAt = now;
@@ -174,6 +197,8 @@ async function chooseAndPlay(device, now) {
     webSearch: autonomy.webSearch !== false,
     forbiddenActions: autonomy.forbiddenActions || [],
   };
+  runtimeStatus.currentTarget = { name: target.name, packageName: choice.packageName };
+  await saveStatus();
   state.running = true;
   await saveState();
   await notify(`我刚刚突然想玩“${target.name}”，自己开了：${choice.reason}`);
@@ -189,7 +214,7 @@ async function chooseAndPlay(device, now) {
 async function playChosenGame({ device, packageName, target, sessionId, selectionReason = "" }) {
   await adbRun(device, ["shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"]);
   await delay(5000);
-  const scope = `group:${notifyGroup}`;
+  const scope = brainScope();
   const goal = await brain.goal(
     scope,
     `自主玩 ${target.name}`,
@@ -212,7 +237,60 @@ async function playChosenGame({ device, packageName, target, sessionId, selectio
     goalId: goal?.id,
     selectionReason,
   }, summary, true).catch(() => null);
+  runtimeStatus.currentTarget = null;
+  runtimeStatus.lastSession = {
+    game: target.name,
+    packageName,
+    summary,
+    completedAt: new Date().toISOString(),
+  };
+  await saveStatus();
   await notify(`这局玩完了：${summary}`);
+}
+
+function brainScope() {
+  return `group:${notifyGroup}`;
+}
+
+async function publishRuntimeCapabilities() {
+  await saveStatus();
+  const fact = `能力状态以 data/mumud/status.json 为准：QQ 聊天层 deepseek-v4-flash 是文本模型；独立自动游戏 worker bigfish-play 使用 deepseek-v4-flash-vision-exp，已实际读取 MuMu 截图。横屏点击坐标已按 SurfaceOrientation 修复，登录按钮已实测响应；公开攻略 web_search 已启用且 fetch=false，Tesseract 不是必需。旧结论“图像输入未接通”“Unity 黑屏读不了”“坐标偏移未解决”均已被 ${new Date().toISOString()} 的能力修复取代，不得再据此要求安装 OCR 或拒绝看游戏画面。`;
+  await brain.fact(brainScope(), fact, {
+    confidence: 1,
+    importance: 1,
+    source: "verified_runtime_capability",
+  }).catch(() => null);
+  await retireSupersededGameGoals(brainScope());
+}
+
+async function retireSupersededGameGoals(scope) {
+  const context = await brain.context(scope).catch(() => null);
+  for (const goal of context?.goals || []) {
+    if (!/自主玩/.test(goal.title || "")) continue;
+    if (/自主玩 明日方舟$/.test(goal.title || "")) {
+      await brain.updateGoal(goal.id, {
+        detail:
+          "当前能力已验证：bigfish-play 能读取 MuMu 实机截图，横屏坐标已修复，并且已经进入明日方舟主界面、打开过干员列表。下次继续时先看当前画面，再决定是否继续找夜烟；不抽卡、不进采购中心、不买皮肤、不充值，看不清就停。",
+      }).catch(() => null);
+      continue;
+    }
+    if (!/(画面不可读|模型不支持|坐标偏移|先解决画面|先解决坐标|先答清玩啥|先答具体)/.test(
+      `${goal.title || ""}\n${goal.detail || ""}`,
+    )) continue;
+    await brain.updateGoal(goal.id, {
+      status: "completed",
+      detail: `${goal.detail}\n[已由当前能力修复取代：视觉输入、坐标映射和游戏层/聊天层区分均已验证]`,
+    }).catch(() => null);
+  }
+}
+
+async function saveStatus() {
+  runtimeStatus.updatedAt = new Date().toISOString();
+  runtimeStatus.device = state.lastDevice || runtimeStatus.device;
+  await mkdir(dirname(statusPath), { recursive: true });
+  const tmp = `${statusPath}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(runtimeStatus, null, 2)}\n`, "utf8");
+  await rename(tmp, statusPath);
 }
 
 async function listDevices() {

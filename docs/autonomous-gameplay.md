@@ -18,6 +18,8 @@ The isolated `bigfish-play` profile contains Android ADB tools, but no shell, fi
 
 The game profile may use DeepSeek `web_search` without owner approval for public rules, terminology, UI meanings, and level guides. It receives search summaries only: webpage fetching, long-form guide reading, browser use, and video guides remain outside this profile.
 
+The QQ chat route and gameplay route are separate. The QQ session may use a text-only model while `bigfish-play` uses the vision model. `services/mumud` publishes the authoritative split and current capability flags to `data/mumud/status.json`, which the QQ agent must read before claiming that the game worker cannot see screenshots or needs OCR.
+
 `deepseek-v4-flash-vision-exp` must be present in the profile's DeepSeek model catalog with `inputModalities: [text, image]`. `pnpm dsh:patch` installs that catalog declaration idempotently. This is required because the Android screenshot tool only returns a real model-visible image block when the active route declares image input.
 
 The worker starts at most one play decision per online emulator session. A 60-minute cooldown prevents repeated decisions while MuMu stays open. Taking MuMu offline clears the previous session timestamp, so closing and reopening the emulator gives BigFish a new opportunity to decide.
