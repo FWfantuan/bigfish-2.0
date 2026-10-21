@@ -22,7 +22,21 @@ If the game is missing, `mumud` keeps polling and reminds the owner at most once
 
 Forbidden actions are refused by the prompt and agent profile: purchase, recharge, rewarded ads, membership, account changes, data deletion, and trades. If the agent can identify one of those dialogs, it must stop.
 
-`config/gameplay.json` controls the active game. The default target searches for a package containing `happyelements` and normally matches 开心消消乐.
+`config/gameplay.json` controls which game, if any, may start automatically. The repository intentionally ships with no default target. A game mentioned in conversation is only an example unless its package and objective are added to `targets`.
+
+Each target needs these fields:
+
+```json
+{
+  "name": "显示名称",
+  "packageQuery": "package-fragment",
+  "packageQueries": ["full.package.name", "package-fragment"],
+  "maxSessionMinutes": 12,
+  "maxActions": 30,
+  "objective": "这个游戏希望做到什么，何时停止",
+  "forbiddenActions": ["充值", "购买", "看广告领奖励"]
+}
+```
 
 Run the deterministic checks with:
 

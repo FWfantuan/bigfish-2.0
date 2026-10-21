@@ -19,20 +19,20 @@ phone-1\tunauthorized
 });
 
 test("parses and selects the intended game package", () => {
-  const packages = parseInstalledPackages(`package:com.example.happyelements.helper
-package:com.happyelements.AndroidAnimal
+  const packages = parseInstalledPackages(`package:com.example.game.helper
+package:com.example.game
 package:com.netease.nie.yosemite
 `);
   assert.deepEqual(packages, [
-    "com.example.happyelements.helper",
-    "com.happyelements.AndroidAnimal",
+    "com.example.game.helper",
+    "com.example.game",
     "com.netease.nie.yosemite",
   ]);
   assert.equal(
     findTargetPackage(packages, {
-      packageQueries: ["com.happyelements.AndroidAnimal", "happyelements"],
+      packageQueries: ["com.example.game", "example.game"],
     }),
-    "com.happyelements.AndroidAnimal",
+    "com.example.game",
   );
 });
 
@@ -66,13 +66,13 @@ test("running sessions are never started twice", () => {
 test("gameplay prompt carries action limits, vision failure handling and safety stops", () => {
   const prompt = buildGameplayPrompt({
     target: {
-      name: "开心消消乐",
+      name: "示例游戏",
       objective: "完成一局",
       maxActions: 30,
       forbiddenActions: ["充值", "购买", "看广告"],
     },
     device: "127.0.0.1:16384",
-    packageName: "com.happyelements.AndroidAnimal",
+    packageName: "com.example.game",
     goalId: "goal-1",
   });
   assert.match(prompt, /最多进行 30 个有意义动作/);

@@ -5,26 +5,5 @@
   "autoLaunchEmulator": false,
   "cooldownMinutes": 60,
   "missingGameReminderMinutes": 360,
-  "targets": [
-    {
-      "name": "开心消消乐",
-      "packageQuery": "happyelements",
-      "packageQueries": [
-        "com.happyelements.AndroidAnimal",
-        "happyelements"
-      ],
-      "maxSessionMinutes": 12,
-      "maxActions": 30,
-      "objective": "观察当前关卡，做出自然的消除操作，能过关就继续，卡住或界面不确定就停。",
-      "forbiddenActions": [
-        "充值",
-        "购买",
-        "看广告领奖励",
-        "开通会员",
-        "修改账号",
-        "删除数据",
-        "交易"
-      ]
-    }
-  ]
+  "targets": []
 }
