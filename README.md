@@ -19,6 +19,8 @@
 - 明日方舟肉鸽由大肥鱼自己决策：自己选分队、干员、遗物、路线和战斗摆放；战斗动作交给 `arknights_maa_action`，由 MAA 在自动暂停下完成干员识别、格子映射和点击。MAA 的自主肉鸽任务不再执行
 - 长任务中的真实画面可按模型判断直接分享；白名单群里的主人会话和主人私聊可以直接调用 `bigfish_share_screenshot`，无需二次确认
 - QQ 会持久化白名单群最近消息，并在 DSH 重启后连同 Brain 最近对话一起注入，艾特时能看到被艾特前的上下文
+- `mumud` 由常驻监督进程管理，登录后自动启动，异常退出 5 秒后自动拉起
+- 游戏汇报默认附带当前真实截图；开局分队、干员、遗物、路线或事件选择不确定时，会暂停并艾特主人询问，答复后继续
 - B站真实关键帧：默认只发一张，通过 QQ 图片消息发回；只有明确要求才多抽
 - B站观看/评论与设备控制 Skills
 
@@ -45,6 +47,7 @@ pnpm dsh:web
 pnpm dsh:worker
 pnpm social:start
 pnpm reply:start
+./scripts/install-mumud-supervisor.ps1
 pnpm social:test
 ```
 

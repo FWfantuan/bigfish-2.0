@@ -198,6 +198,9 @@ test("agentic roguelike prompt makes BigFish decide while paused", () => {
   assert.match(prompt, /禁止 SkillDaemon/);
   assert.match(prompt, /自己决定并操作/);
   assert.match(prompt, /连续两次工具操作没反应/);
+  assert.match(prompt, /arknights_ask_owner/);
+  assert.match(prompt, /开局分队、初始干员、招募谁/);
+  assert.match(prompt, /不要先随便选完再汇报/);
   assert.match(prompt, /不要标题、编号、动作数清单、客服式总结/);
 });
 

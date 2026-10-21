@@ -45,6 +45,10 @@ agent:
 
 QQ Bridge 还会把白名单群最近 24 条消息持久化到 `data/qq-history.json`。被艾特时会注入最近 12 条原文，并与 Brain 中重启前保留的最近 QQ 回合合并，因此 DSH 重启后仍能理解“上文在说什么”。
 
+游戏进入需要主人作决定的开局、干员、遗物、路线或事件界面时，后台会发送当前截图并暂停。主人回复具体选项后，QQ Agent 调用 `bigfish_answer_gameplay`，答案写回 `data/mumud/question.answer.json`，原游戏进程继续。
+
+`mumud` 使用用户 Startup 目录中的 `BigFishMumudSupervisor.vbs` 在登录后自动运行。监督脚本持有单实例锁，`mumud` 异常退出后等待 5 秒重新拉起；`scripts/start-dsh-stack.ps1` 也会确保监督进程存在。
+
 `bigfish-worker` 的插件：
 
 ```text

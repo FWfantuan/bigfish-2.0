@@ -256,6 +256,8 @@ export function buildGameplayPrompt({ target, device, packageName, goalId, agent
 - 需要等待费用或观察下一波时，通过 action 的 costs、cost_changes、kills、post_delay 等条件表达；不要依赖固定几秒。
 - 使用 arknights_maa_action 时禁止 SkillDaemon。技能什么时候开必须由你决定，用 Skill 或 SkillUsage action 表达。
 - 标准确认按钮、暂停键和倍速键优先使用 arknights_press_ui，不要凭缩放截图估计按钮中心。
+- 遇到开局分队、初始干员、招募谁、看不懂的遗物/收藏品、路线、事件选项，或两套战斗方案后果明显不同且你确实拿不准时，立即调用 arknights_ask_owner。说清当前选项、你的倾向和不确定原因；后台会暂停截图并等主人回答。不要先随便选完再汇报，也不要等到工具失败才问。
+- 正常过关、点确认、有明确最优解或你已经有足够把握时自己继续，不要把每个小步骤都拿去问主人。
 - 画面看不清、两个选择后果明显不同、连续两次工具操作没反应，或出现无法理解的新机制时，停止操作并在 QQ_SUMMARY 里直接问主人。
 - 如果出现了你觉得有意思的场面，保持当前安全状态；后台观战会负责分享截图。
 - 不要把实时战斗交给盲点循环。费用、干员、敌人数量和战术选择都必须来自当前截图，低层点击交给 MAA。`

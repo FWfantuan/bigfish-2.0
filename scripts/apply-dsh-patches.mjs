@@ -28,6 +28,7 @@ const qqRouter = resolve(
   "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/router.js",
 );
 const qqFramesSnippet = resolve("patches/qq-frames-tool.snippet.js");
+const qqGameplayAnswerSnippet = resolve("patches/qq-gameplay-answer-tool.snippet.js");
 const qqGameRequestSnippet = resolve("patches/qq-game-request-tool.snippet.js");
 const qqRecentHistorySnippet = resolve("patches/qq-recent-history.snippet.js");
 const qqScreenshotSnippet = resolve("patches/qq-screenshot-tool.snippet.js");
@@ -448,6 +449,18 @@ for (const androidHostPlugin of androidHostPlugins) {
     "    disposers.push(ctx.effect(() => {",
     "        const disposeMaaAction = hostCtx.tools.register(bigfishArknightsTools.arknightsMaaAction);",
     "        const disposePressUi = hostCtx.tools.register(bigfishArknightsTools.arknightsPressUi);",
+    "        const disposeAskOwner = hostCtx.tools.register(bigfishArknightsTools.arknightsAskOwner);",
+    "        return () => {",
+    "            disposeAskOwner();",
+    "            disposePressUi();",
+    "            disposeMaaAction();",
+    "        };",
+    "    }, 'bigfish-arknights:semantic-actions'));",
+  ].join("\n");
+  const legacyRegistrationBlock = [
+    "    disposers.push(ctx.effect(() => {",
+    "        const disposeMaaAction = hostCtx.tools.register(bigfishArknightsTools.arknightsMaaAction);",
+    "        const disposePressUi = hostCtx.tools.register(bigfishArknightsTools.arknightsPressUi);",
     "        return () => {",
     "            disposePressUi();",
     "            disposeMaaAction();",
@@ -458,6 +471,7 @@ for (const androidHostPlugin of androidHostPlugins) {
     const source = await readFile(profile.index, "utf8");
     let next = source;
     if (profile.profile === "bigfish-play") {
+      next = next.replace(legacyRegistrationBlock, registrationBlock);
       if (!next.includes(marker)) {
         next = next
           .replace(
@@ -965,6 +979,45 @@ await patch(
     console.log(`patched: ${qqPlugin}`);
   } else {
     console.log(`already patched: ${qqPlugin}`);
+  }
+}
+
+{
+  const source = await readFile(qqPlugin, "utf8");
+  const registrationMarker = "// BIGFISH_QQ_GAMEPLAY_ANSWER_REGISTERED";
+  let next = source;
+  if (!source.includes(registrationMarker)) {
+    next = source
+      .replace(
+        "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);",
+        [
+          "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);",
+          `    ${registrationMarker}`,
+          "    const unregisterBigFishGameplayAnswer = registerBigFishGameplayAnswerTool(ctx, cfg, officialMode);",
+        ].join("\n"),
+      )
+      .replace(
+        "        unregisterBigFishFrames?.();",
+        [
+          "        unregisterBigFishFrames?.();",
+          "        unregisterBigFishGameplayAnswer?.();",
+        ].join("\n"),
+      );
+    if (next === source) throw new Error(`gameplay answer registration target not found: ${qqPlugin}`);
+  }
+  const snippet = await readFile(qqGameplayAnswerSnippet, "utf8");
+  const markerIndex = next.indexOf("// BIGFISH_QQ_GAMEPLAY_ANSWER_TOOL");
+  if (markerIndex >= 0) {
+    const nextSection = next.indexOf("// BIGFISH_QQ_RECENT_HISTORY", markerIndex);
+    next = `${next.slice(0, markerIndex)}${snippet.trimEnd()}\n${nextSection >= 0 ? `\n${next.slice(nextSection)}` : ""}`;
+  } else {
+    next = `${next.trimEnd()}\n\n${snippet.trimEnd()}\n`;
+  }
+  if (next !== source) {
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`patched QQ gameplay answer tool: ${qqPlugin}`);
+  } else {
+    console.log(`already patched QQ gameplay answer tool: ${qqPlugin}`);
   }
 }
 

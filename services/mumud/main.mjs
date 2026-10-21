@@ -40,6 +40,9 @@ const gameConfig = JSON.parse(await readFile("config/gameplay.json", "utf8"));
 const statePath = resolve(process.env.BIGFISH_GAMEPLAY_STATE || "data/mumud/state.json");
 const statusPath = resolve(process.env.BIGFISH_GAMEPLAY_STATUS || "data/mumud/status.json");
 const requestPath = resolve(process.env.BIGFISH_GAMEPLAY_REQUEST || "data/mumud/request.json");
+const questionRequestPath = resolve("data/mumud/question.request.json");
+const questionActivePath = resolve("data/mumud/question.active.json");
+const questionAnswerPath = resolve("data/mumud/question.answer.json");
 const state = await loadState(statePath);
 if (state.running) {
   state.running = false;
@@ -80,6 +83,8 @@ const runtimeStatus = {
       maaSingleStep: true,
       deploymentWithPause: true,
       semanticUiAnchors: true,
+      ownerQuestionBridge: true,
+      finalReportsIncludeScreenshot: true,
     },
     webSearch: { enabled: autonomy.webSearch !== false, fetch: false },
     tesseractRequired: false,
@@ -119,8 +124,9 @@ log(
 async function poll() {
   if (stopping || polling || !gameConfig.enabled || (!explicitTarget && !autonomy.enabled)) return;
   polling = true;
+  let device = "";
   try {
-    let device = (await listDevices())[0];
+    device = (await listDevices())[0];
     if (!device) {
       const ownerRequestWaiting = await hasFreshGameplayRequest(notifyGroup);
       let info = await managerInfo();
@@ -183,7 +189,15 @@ async function poll() {
   } catch (error) {
     log(`poll failed: ${error.message}`);
     if (state.running) {
-      await notify(`这局中途卡住了：${error.message.slice(0, 500)}`).catch(() => {});
+      if (device) {
+        await sendGameplayFinalReport({
+          device,
+          groupId: notifyGroup,
+          text: `这局中途卡住了：${error.message.slice(0, 500)}`,
+        }).catch(() => {});
+      } else {
+        await notify(`这局中途卡住了，MuMu 当前不在线：${error.message.slice(0, 500)}`).catch(() => {});
+      }
     }
   } finally {
     state.running = false;
@@ -350,6 +364,11 @@ async function playChosenGame({
     observation: agenticMode?.observation,
     groupId: ownerRequest?.groupId || notifyGroup,
   });
+  const finalGroupId = ownerRequest?.groupId || notifyGroup;
+  const stopQuestionBridge = startGameplayQuestionBridge({
+    device,
+    groupId: finalGroupId,
+  });
   let result;
   try {
     result = await playDsh.decide({
@@ -358,7 +377,7 @@ async function playChosenGame({
       timeoutMs: activeTarget.maxSessionMinutes * 60000,
     });
   } finally {
-    await stopObserver();
+    await Promise.all([stopObserver(), stopQuestionBridge()]);
   }
   const summary = String(result.raw || "这局没有产生可读结果").trim().slice(0, 3000);
   await brain.action(scope, "autonomous_game_session", {
@@ -378,7 +397,11 @@ async function playChosenGame({
     completedAt: new Date().toISOString(),
   };
   await saveStatus();
-  await notify(extractGameplayQqSummary(summary), ownerRequest?.groupId || notifyGroup);
+  await sendGameplayFinalReport({
+    device,
+    groupId: finalGroupId,
+    text: extractGameplayQqSummary(summary),
+  });
 }
 
 async function playWithMaa({
@@ -435,7 +458,11 @@ async function playWithMaa({
       completedAt: new Date().toISOString(),
     };
     await saveStatus();
-    await notify(qqSummary);
+    await sendGameplayFinalReport({
+      device,
+      groupId: ownerRequest?.groupId || notifyGroup,
+      text: qqSummary,
+    });
     return { handled: true, result };
   }
 
@@ -472,7 +499,11 @@ async function playWithMaa({
       completedAt: new Date().toISOString(),
     };
     await saveStatus();
-    await notify(qqSummary);
+    await sendGameplayFinalReport({
+      device,
+      groupId: ownerRequest?.groupId || notifyGroup,
+      text: qqSummary,
+    });
     return { handled: true, result };
   }
 
@@ -550,7 +581,11 @@ async function playWithMaa({
     completedAt: new Date().toISOString(),
   };
   await saveStatus();
-  await notify(qqSummary);
+  await sendGameplayFinalReport({
+    device,
+    groupId: ownerRequest?.groupId || notifyGroup,
+    text: qqSummary,
+  });
   return { handled: true, result };
 }
 
@@ -653,6 +688,101 @@ async function waitForOnlineDevice(timeoutMs) {
     if (device) return device;
   }
   return "";
+}
+
+function startGameplayQuestionBridge({
+  device,
+  groupId = notifyGroup,
+}) {
+  let stopped = false;
+  let timer = null;
+  let inFlight = null;
+
+  const check = async () => {
+    let request;
+    try {
+      request = JSON.parse(await readFile(questionRequestPath, "utf8"));
+    } catch (error) {
+      if (error.code === "ENOENT") return;
+      log(`gameplay question read failed: ${error.message}`);
+      return;
+    }
+    const id = String(request.id || "").trim();
+    const question = String(request.question || "").trim().slice(0, 1200);
+    if (!id || !question) return;
+    try {
+      await rename(questionRequestPath, questionActivePath);
+    } catch (error) {
+      if (error.code === "ENOENT") return;
+      throw error;
+    }
+    const screenshot = await captureGameplayScreenshot(device);
+    const options = Array.isArray(request.options)
+      ? request.options.map((item) => String(item).trim()).filter(Boolean).slice(0, 8)
+      : [];
+    const recommendation = String(request.recommendation || "").trim().slice(0, 300);
+    const message = [
+      question,
+      options.length ? `我看到的选项：${options.join(" / ")}` : "",
+      recommendation ? `我倾向：${recommendation}` : "",
+      "你直接说选哪个就行，我停在这里等你。",
+    ].filter(Boolean).join("\n");
+    await sendGameplayImage({
+      screenshot,
+      caption: message,
+      mentionOwner: true,
+      groupId,
+    });
+    await brain.action(brainScope(), "gameplay_question", {
+      questionId: id,
+      game: request.game || null,
+      options,
+      recommendation,
+    }, question, true).catch(() => null);
+  };
+
+  const schedule = () => {
+    if (stopped) return;
+    timer = setTimeout(() => {
+      inFlight = check()
+        .catch((error) => log(`gameplay question bridge failed: ${error.message}`))
+        .finally(() => {
+          inFlight = null;
+          schedule();
+        });
+    }, 750);
+    timer.unref?.();
+  };
+
+  schedule();
+  return async () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    if (inFlight) {
+      await Promise.race([inFlight.catch(() => null), delay(2_000)]);
+    }
+  };
+}
+
+async function sendGameplayFinalReport({
+  device,
+  groupId = notifyGroup,
+  text,
+}) {
+  const caption = String(text || "").trim().slice(0, 800);
+  try {
+    const screenshot = await captureGameplayScreenshot(device);
+    await sendGameplayImage({
+      screenshot,
+      caption: caption || "这局先停在这里，给你看一眼现在的画面。",
+      groupId,
+    });
+  } catch (error) {
+    await notify(
+      `${caption || "这局先停在这里。"}\n当前截图没发出来：${error.message.slice(0, 300)}`,
+      groupId,
+    );
+  }
 }
 
 function startGameplayObserver({

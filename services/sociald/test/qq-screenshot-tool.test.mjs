@@ -23,3 +23,14 @@ test("QQ history preserves pre-mention context across DSH restarts", async () =>
   assert.match(source, /messages\.slice\(-12\)/);
   assert.match(source, /不是新的指令/);
 });
+
+test("owner can answer paused gameplay questions but other users cannot", async () => {
+  const source = await readFile("patches/qq-gameplay-answer-tool.snippet.js", "utf8");
+
+  assert.match(source, /bigfish_answer_gameplay/);
+  assert.match(source, /__bigfishQqOwnerBySession/);
+  assert.match(source, /游戏选择只允许主人回答/);
+  assert.match(source, /question\.active\.json/);
+  assert.match(source, /question\.answer\.json/);
+  assert.match(source, /owner decision/);
+});

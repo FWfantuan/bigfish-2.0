@@ -72,13 +72,18 @@ if ($replyd) {
     Start-HiddenService -Name 'replyd' -Arguments 'reply:start' -Port 0
 }
 
-$mumud = Get-CimInstance Win32_Process |
-    Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'services[\\/]mumud[\\/]main\.mjs' } |
+$mumudSupervisor = Get-CimInstance Win32_Process |
+    Where-Object { $_.CommandLine -match 'run-mumud-supervisor\.ps1' } |
     Select-Object -First 1
-if ($mumud) {
-    Write-Output "mumud is running with PID $($mumud.ProcessId)"
+if ($mumudSupervisor) {
+    Write-Output "mumud supervisor is running with PID $($mumudSupervisor.ProcessId)"
 } else {
-    Start-HiddenService -Name 'mumud' -Arguments 'play:start' -Port 0
+    $supervisorScript = Join-Path $projectRoot 'scripts/run-mumud-supervisor.ps1'
+    Start-Process -FilePath 'powershell.exe' `
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $supervisorScript) `
+        -WorkingDirectory $projectRoot `
+        -WindowStyle Hidden
+    Write-Output 'mumud supervisor started'
 }
 
 for ($attempt = 0; $attempt -lt 40; $attempt++) {

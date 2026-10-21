@@ -40,7 +40,13 @@ An explicit owner request is different from the routine autonomous cooldown. The
 
 During a longer session, a read-only observer checks the real screen after the initial delay and at the configured interval. It stays quiet for ordinary progress, shares a screenshot when a visible moment is genuinely worth showing, and asks the owner when a decision is truly blocked. Duplicate images are suppressed. `maxShares: 0` means there is no fixed share-count cap; the model still follows the no-spam rule and the configured interval.
 
+The main play worker asks much earlier than a tool failure. Opening squad, starting operators, recruitment, unfamiliar relics, route/event choices, and materially different combat plans can call `arknights_ask_owner`. That creates a pending question, sends its real screenshot to the owner, and pauses the choice. The owner's QQ reply is passed through `bigfish_answer_gameplay`, written back to `data/mumud/question.answer.json`, and the waiting game resumes with that answer. Trivial actions and clear decisions continue autonomously.
+
 The QQ chat route can also call `bigfish_share_screenshot` directly. In an owner conversation in a whitelisted group, or in owner private chat, no second confirmation is requested: the tool captures the current online ADB device, saves a local copy, and sends the image to that conversation. Non-owner and out-of-whitelist calls are rejected.
+
+Game start, stop, failure and completion reports use the same real-screen image path, so a summary is not sent as text by itself. If the screenshot fails, the report includes the concrete capture error.
+
+Install `scripts/install-mumud-supervisor.ps1` once. It places a hidden startup launcher in the user's Startup folder and starts `scripts/run-mumud-supervisor.ps1`. The supervisor holds a single-instance mutex and restarts `pnpm play:start` after every unexpected exit.
 
 Named games can be mapped to their installed package in `gameAliases`. When an owner request exactly matches a configured alias and that package is installed, the worker starts it directly instead of spending another model turn deciding whether to play it. The autonomous choice path remains for open requests such as “随便玩”.
 

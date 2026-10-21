@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -346,5 +346,127 @@ export function createBigFishArknightsTools() {
     }),
   });
 
-  return { arknightsMaaAction: maaAction, arknightsPressUi: pressUi };
+  const askOwner = defineTool({
+    name: "arknights_ask_owner",
+    description:
+      "Pause before a strategic Arknights choice that BigFish cannot confidently make and ask the owner. "
+      + "Use this for opening squad/operators, an unfamiliar relic, competing route/event choices, or "
+      + "two viable tactical plans with materially different consequences. The current screen is sent to "
+      + "the owner automatically. State the concrete options, your recommendation and why you are unsure. "
+      + "Do not use it for trivial clicks or as a substitute for trying to understand the game.",
+    parameters: {
+      game: {
+        type: "string",
+        description: "Current game/mode label",
+      },
+      question: {
+        type: "string",
+        required: true,
+        description: "Specific BigFish-style question naming the current choice",
+      },
+      options: {
+        type: "array",
+        items: { type: "string" },
+        description: "Visible choices, in short labels",
+      },
+      recommendation: {
+        type: "string",
+        description: "BigFish's current preference and reason",
+      },
+      timeoutMinutes: {
+        type: "integer",
+        description: "How long to wait, default 5 and maximum 10 minutes",
+      },
+    },
+    output: {
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          answered: { type: "boolean", required: true },
+          timedOut: { type: "boolean", required: true },
+          questionId: { type: "string", required: true },
+          answer: { type: "string", required: true },
+        },
+      },
+      render: (_args, value) => [{
+        type: "text",
+        text: JSON.stringify(value, null, 2),
+      }],
+    },
+    timeoutMs: 11 * 60_000,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const question = String(args.question || "").trim().slice(0, 1200);
+      if (!question) throw new Error("question is required");
+      const options = Array.isArray(args.options)
+        ? args.options.map((item) => String(item).trim()).filter(Boolean).slice(0, 8)
+        : [];
+      const recommendation = String(args.recommendation || "").trim().slice(0, 300);
+      const timeoutMinutes = Math.max(
+        1,
+        Math.min(10, Number(args.timeoutMinutes) || 5),
+      );
+      const questionId = randomUUID();
+      const directory = resolve(projectRoot(), "data", "mumud");
+      const requestPath = resolve(directory, "question.request.json");
+      const activePath = resolve(directory, "question.active.json");
+      const answerPath = resolve(directory, "question.answer.json");
+      await mkdir(directory, { recursive: true });
+      const temporary = `${requestPath}.${questionId}.tmp`;
+      await writeFile(temporary, JSON.stringify({
+        version: 1,
+        id: questionId,
+        createdAt: new Date().toISOString(),
+        game: String(args.game || "明日方舟").slice(0, 120),
+        question,
+        options,
+        recommendation,
+      }, null, 2), "utf8");
+      await rename(temporary, requestPath);
+
+      const deadline = Date.now() + timeoutMinutes * 60_000;
+      while (Date.now() < deadline) {
+        try {
+          const answer = JSON.parse(await readFile(answerPath, "utf8"));
+          if (String(answer.questionId || "") === questionId) {
+            await Promise.all([
+              unlink(activePath).catch(() => null),
+              unlink(answerPath).catch(() => null),
+            ]);
+            return {
+              answered: true,
+              timedOut: false,
+              questionId,
+              answer: String(answer.answer || "").trim().slice(0, 1000),
+            };
+          }
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 750));
+      }
+      await Promise.all([
+        unlink(requestPath).catch(() => null),
+        unlink(activePath).catch(() => null),
+      ]);
+      return {
+        answered: false,
+        timedOut: true,
+        questionId,
+        answer: "",
+      };
+    },
+    presentCall: () => ({
+      card: "generic",
+      title: "Ask owner about an Arknights choice",
+      kind: "execute",
+    }),
+  });
+
+  return {
+    arknightsMaaAction: maaAction,
+    arknightsPressUi: pressUi,
+    arknightsAskOwner: askOwner,
+  };
 }
