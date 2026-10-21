@@ -5,5 +5,22 @@
   "autoLaunchEmulator": false,
   "cooldownMinutes": 60,
   "missingGameReminderMinutes": 360,
+  "autonomy": {
+    "enabled": true,
+    "notifyOnSkip": false,
+    "decisionTimeoutMinutes": 10,
+    "maxSessionMinutes": 12,
+    "maxActions": 30,
+    "objective": "像自己真心想玩一样探索当前游戏，能玩就连续玩，卡住或界面不确定就停。",
+    "forbiddenActions": [
+      "充值",
+      "购买",
+      "看广告领奖励",
+      "开通会员",
+      "修改账号",
+      "删除数据",
+      "交易"
+    ]
+  },
   "targets": []
 }

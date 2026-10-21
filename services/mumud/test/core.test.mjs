@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildGameChoicePrompt,
   buildGameplayPrompt,
   findTargetPackage,
+  normalizeGameChoice,
   parseInstalledPackages,
   parseOnlineDevices,
   reconcileDevicePresence,
@@ -61,6 +63,52 @@ test("running sessions are never started twice", () => {
     sessionGate({ running: true, lastSessionAt: 0 }, Date.now(), 0),
     { allowed: false, reason: "running" },
   );
+});
+
+test("autonomous choice accepts an installed package and preserves the agent's reason", () => {
+  const choice = normalizeGameChoice({
+    action: "play",
+    package_name: "com.example.game",
+    display_name: "新发现的小游戏",
+    objective: "先玩十分钟，看懂规则",
+    reason: "今天想试个没玩过的",
+    inner_state: { mood: "好奇", focus: "新游戏", desire: "探索玩法" },
+  }, ["com.example.game", "com.example.tool"]);
+  assert.equal(choice.action, "play");
+  assert.equal(choice.packageName, "com.example.game");
+  assert.equal(choice.reason, "今天想试个没玩过的");
+  assert.deepEqual(choice.innerState, {
+    mood: "好奇",
+    focus: "新游戏",
+    desire: "探索玩法",
+  });
+});
+
+test("autonomous choice cannot launch an invented or non-third-party package", () => {
+  const choice = normalizeGameChoice({
+    action: "play",
+    package_name: "com.android.settings",
+  }, ["com.example.game"]);
+  assert.equal(choice.action, "skip");
+  assert.match(choice.reason, /不是当前可验证的第三方安装包/);
+});
+
+test("autonomous choice may decide not to play", () => {
+  assert.deepEqual(
+    normalizeGameChoice({ action: "skip", reason: "现在更想安静待着" }, ["com.example.game"]),
+    { action: "skip", reason: "现在更想安静待着" },
+  );
+});
+
+test("game choice prompt gives BigFish freedom instead of prescribing a game", () => {
+  const prompt = buildGameChoicePrompt({
+    autonomy: { enabled: true },
+    packages: ["com.example.game"],
+    brainContext: { self: { mood: "放松" }, skills: [] },
+  });
+  assert.match(prompt, /可以重温喜欢的东西/);
+  assert.match(prompt, /也可以觉得现在没兴致而选择不玩/);
+  assert.match(prompt, /com\.example\.game/);
 });
 
 test("gameplay prompt carries action limits, vision failure handling and safety stops", () => {
