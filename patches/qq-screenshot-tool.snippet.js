@@ -68,20 +68,30 @@ function registerBigFishScreenshotTool(ctx, client, cfg, officialMode) {
             const projectRoot = process.env.BIGFISH_PROJECT_ROOT || process.cwd();
             let preferredDevice = '';
             let gameplayState = null;
+            let gameplayLive = null;
             try {
-                const [status, state] = await Promise.all([
+                const [status, state, live] = await Promise.all([
                     readFile(resolve(projectRoot, 'data', 'mumud', 'status.json'), 'utf8')
                         .then((value) => JSON.parse(value)),
                     readFile(resolve(projectRoot, 'data', 'mumud', 'state.json'), 'utf8')
                         .then((value) => JSON.parse(value)),
+                    readFile(resolve(projectRoot, 'data', 'mumud', 'live.json'), 'utf8')
+                        .then((value) => JSON.parse(value))
+                        .catch(() => null),
                 ]);
                 preferredDevice = String(status.device || '');
                 gameplayState = state;
+                gameplayLive = live;
             } catch {
                 // A stopped gameplay worker is fine; use any online device.
             }
-            if (scope === 'group' && gameplayState?.running === true) {
-                const activeGroupId = String(gameplayState.activeGroupId || gameplayState.activeSession?.groupId || '');
+            if (scope === 'group' && (gameplayState?.running === true || gameplayLive?.active === true)) {
+                const activeGroupId = String(
+                    gameplayState?.activeGroupId
+                    || gameplayState?.activeSession?.groupId
+                    || gameplayLive?.groupId
+                    || '',
+                );
                 if (activeGroupId && activeGroupId !== String(targetId)) {
                     throw new Error('当前游戏由另一个白名单群发起，游戏截图只能发回发起群');
                 }
