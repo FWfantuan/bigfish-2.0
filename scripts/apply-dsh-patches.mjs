@@ -20,9 +20,53 @@ const qqAgentHandler = resolve(
   "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/handlers/agent.js",
 );
 const qqFramesSnippet = resolve("patches/qq-frames-tool.snippet.js");
+const playProfilePatch = resolve(
+  dshHome,
+  "profiles/bigfish-play/cordis.patch.yml",
+);
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
 );
+
+async function ensurePlayVisionCatalog() {
+  let source;
+  try {
+    source = await readFile(playProfilePatch, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      console.log(`play profile not installed, skipped vision catalog: ${playProfilePatch}`);
+      return;
+    }
+    throw error;
+  }
+  if (source.includes("inputModalities:")) {
+    console.log(`already patched: ${playProfilePatch}`);
+    return;
+  }
+  const anchor = [
+    "    provider: deepseek-official",
+    "    model: deepseek-v4-flash-vision-exp",
+  ].join("\n");
+  if (!source.includes(anchor)) {
+    throw new Error(`play profile model anchor not found: ${playProfilePatch}`);
+  }
+  const block = [
+    anchor,
+    "- id: llm-deepseek",
+    "  config:",
+    "    models:",
+    "      - id: deepseek-v4-flash-vision-exp",
+    "        name: DeepSeek V4 Flash Vision (experimental)",
+    "        contextWindow: 1000000",
+    "        inputModalities:",
+    "          - text",
+    "          - image",
+  ].join("\n");
+  await writeFile(playProfilePatch, source.replace(anchor, block), "utf8");
+  console.log(`patched: ${playProfilePatch}`);
+}
+
+await ensurePlayVisionCatalog();
 
 async function patch(path, marker, replace) {
   const source = await readFile(path, "utf8");

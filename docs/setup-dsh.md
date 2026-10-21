@@ -1,10 +1,11 @@
 # DSH profile 配置
 
-大肥鱼使用三个 profile：
+大肥鱼使用四个 profile：
 
 - `bigfish017`：Web profile，承载 QQ Bridge 和 B站插件。
 - `bigfish-worker`：headless profile，承载主动社交、B站、浏览器、桌面和 Android 工具。
 - `bigfish-social`：无外部工具的社交推理 profile，只负责主动聊天和接话判断。
+- `bigfish-play`：隔离的自动游戏 profile，只挂 Android ADB 工具，使用带视觉输入的 DeepSeek 模型。
 
 固定 DSH 版本为 `0.1.7-rc.2`。最新版 DSH 与当前 QQ Bridge 客户端依赖不兼容。
 
@@ -35,6 +36,17 @@ dsh-plugin-bilibili 0.2.1
 @deepseek-ai/dsh-computer-use 0.1.6-alpha.1
 @deepseek-ai/dsh-experimental-computer-use-cua-driver-native 0.1.6-alpha.1
 ```
+
+`bigfish-play` 的插件：
+
+```text
+@zseven-w/dsh-android 0.1.0-rc.12
+```
+
+它的默认模型是 `deepseek-v4-flash-vision-exp`。`pnpm dsh:patch` 会幂等检查
+`bigfish-play/cordis.patch.yml`，在该模型的目录项中声明
+`inputModalities: [text, image]`；缺少这个声明时 Android 截图只能返回 JSON
+摘要，Agent 看不到画面。
 
 本机环境文件需要包含：
 

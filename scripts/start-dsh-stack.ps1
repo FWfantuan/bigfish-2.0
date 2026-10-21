@@ -72,6 +72,15 @@ if ($replyd) {
     Start-HiddenService -Name 'replyd' -Arguments 'reply:start' -Port 0
 }
 
+$mumud = Get-CimInstance Win32_Process |
+    Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'services[\\/]mumud[\\/]main\.mjs' } |
+    Select-Object -First 1
+if ($mumud) {
+    Write-Output "mumud is running with PID $($mumud.ProcessId)"
+} else {
+    Start-HiddenService -Name 'mumud' -Arguments 'play:start' -Port 0
+}
+
 for ($attempt = 0; $attempt -lt 40; $attempt++) {
     if (Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue) {
         break

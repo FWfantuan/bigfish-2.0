@@ -10,7 +10,9 @@
     "brain:start": "node services/brain/main.mjs",
     "social:start": "node services/sociald/main.mjs",
     "reply:start": "node services/replyd/main.mjs",
-    "social:test": "node --test services/sociald/test/*.test.mjs services/replyd/test/*.test.mjs services/brain/test/*.test.mjs"
+    "play:start": "node services/mumud/main.mjs",
+    "play:test": "node --test services/mumud/test/*.test.mjs",
+    "social:test": "node --test services/sociald/test/*.test.mjs services/replyd/test/*.test.mjs services/brain/test/*.test.mjs services/mumud/test/*.test.mjs"
   },
   "dependencies": {
     "@trycua/cua-driver": "0.37.0",
