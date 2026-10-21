@@ -34,7 +34,19 @@ export function isSupportedMaaResolution(size, supported = DEFAULT_RESOLUTIONS) 
   );
 }
 
-export function resolveMaaTask(packageName, maaConfig = {}) {
+export function resolveMaaTask(packageName, maaConfig = {}, hint = "") {
+  const normalizedHint = String(hint || "").normalize("NFKC").toLowerCase();
+  for (const rule of maaConfig.hintTasks || []) {
+    if (!rule || typeof rule.task !== "string") continue;
+    const keywords = Array.isArray(rule.keywords) ? rule.keywords : [];
+    if (!keywords.some((keyword) => normalizedHint.includes(String(keyword).toLowerCase()))) {
+      continue;
+    }
+    if (!Array.isArray(maaConfig.taskAllowlist) || maaConfig.taskAllowlist.includes(rule.task)) {
+      return MAA_TASK_ID.test(rule.task) ? rule.task : null;
+    }
+  }
+
   const task = maaConfig.safeTasks?.[packageName];
   if (typeof task !== "string" || !MAA_TASK_ID.test(task)) return null;
   if (Array.isArray(maaConfig.taskAllowlist) && !maaConfig.taskAllowlist.includes(task)) {
@@ -43,7 +55,7 @@ export function resolveMaaTask(packageName, maaConfig = {}) {
   return task;
 }
 
-export function buildMaaArgs({ task, address, profile = "default", logFile }) {
+export function buildMaaArgs({ task, address, profile = "default", logFile, verbose = false }) {
   if (!MAA_TASK_ID.test(String(task || ""))) {
     throw new Error("MAA task id is invalid");
   }
@@ -52,7 +64,50 @@ export function buildMaaArgs({ task, address, profile = "default", logFile }) {
   }
   const args = ["--batch", "run", task, "--addr", address, "--profile", profile];
   if (logFile) args.push(`--log-file=${logFile}`);
+  if (verbose) args.push("-v");
   return args;
+}
+
+export function extractRoguelikeEvidence(output, limit = 120) {
+  const lines = stripAnsi(output)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) =>
+      /roguelike|integrated strateg|主题|分队|难度|希望|源石锭|藏品|招募|商店|节点|层|结局|通关|胜利|失败|放弃|战斗|作战|battle|combat|investment|floor|node|squad|theme|difficulty|encounter|relic|recruit/i
+        .test(line),
+    );
+  return [...new Set(lines)].slice(-Math.max(1, Number(limit) || 120));
+}
+
+export function buildMaaLearningRecord({ task, taskProfile = {}, result = {} }) {
+  const roguelike = taskProfile.domain === "arknights_roguelike";
+  const evidence = roguelike ? extractRoguelikeEvidence(result.outputTail) : [];
+  const practiceStarted = evidence.some((line) =>
+    /Start exploration|StartCombat|开始探索|进入战斗|Start combat/i.test(line),
+  );
+  return {
+    domain: taskProfile.domain || "game",
+    game: "arknights",
+    engine: "maa",
+    task,
+    theme: taskProfile.theme || null,
+    mode: taskProfile.mode ?? null,
+    squad: taskProfile.squad || null,
+    roles: taskProfile.roles || null,
+    difficulty: taskProfile.difficulty ?? null,
+    startsCount: taskProfile.startsCount ?? null,
+    investmentEnabled: taskProfile.investmentEnabled ?? null,
+    ok: result.ok === true,
+    meaningful: result.ok === true && (!roguelike || practiceStarted),
+    practiceStarted,
+    phase: result.phase || null,
+    error: result.error || null,
+    completedTasks: Number(result.completedTasks || 0),
+    battles: Array.isArray(result.battles) ? result.battles.slice(-8) : [],
+    errors: Array.isArray(result.errors) ? result.errors.slice(-12) : [],
+    evidence,
+  };
 }
 
 export function summarizeMaaOutput(stdout = "", stderr = "") {
@@ -87,10 +142,16 @@ export function summarizeMaaOutput(stdout = "", stderr = "") {
   };
 }
 
-export function buildMaaQqSummary({ game = "明日方舟", result } = {}) {
+export function buildMaaQqSummary({ game = "明日方舟", result, taskProfile = {} } = {}) {
   if (!result?.ok) {
     const reason = String(result?.error || "MAA 没跑起来").replace(/\s+/g, " ").trim();
     return `我本来想用 MAA 帮我打会儿${game}，结果它那边没接上。${reason.slice(0, 160)}。这次我没盲点，等回头再弄。`;
+  }
+  if (taskProfile.domain === "arknights_roguelike" && result.meaningful === false) {
+    return `我想开一局${taskProfile.theme || ""}肉鸽实训，但账号正在玩别的主题，我没硬切，也没乱花资源。这次不算训练局。`;
+  }
+  if (taskProfile.domain === "arknights_roguelike") {
+    return "这局肉鸽实训跑完了，路线、战斗和资源记录我都收好准备复盘。没买源石，也没投资源石锭。";
   }
   const taskCount = Number(result.completedTasks || 0);
   const action = taskCount > 0
@@ -191,7 +252,7 @@ export class MaaRunner {
     }
   }
 
-  async run({ task, address, timeoutMs = 15 * 60_000 }) {
+  async run({ task, address, timeoutMs = 15 * 60_000, verbose = false }) {
     if (!MAA_TASK_ID.test(String(task || ""))) {
       return { ok: false, phase: "preflight", error: "MAA task id is invalid" };
     }
@@ -215,6 +276,7 @@ export class MaaRunner {
       address,
       profile,
       logFile,
+      verbose,
     });
     try {
       const { stdout, stderr } = await this.execFile(this.paths.cli, args, {

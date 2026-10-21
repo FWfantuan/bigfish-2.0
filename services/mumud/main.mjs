@@ -21,6 +21,7 @@ import {
   validateGameplayRequest,
 } from "./core.mjs";
 import {
+  buildMaaLearningRecord,
   buildMaaQqSummary,
   isSupportedMaaResolution,
   MaaRunner,
@@ -301,7 +302,13 @@ async function playChosenGame({
       : target.objective,
     1,
   ).catch(() => null);
-  const maaTask = resolveMaaTask(packageName, maaConfig);
+  const maaHint = [
+    ownerRequest?.game,
+    selectionReason,
+    target.objective,
+    target.name,
+  ].filter(Boolean).join(" ");
+  const maaTask = resolveMaaTask(packageName, maaConfig, maaHint);
   if (maaTask) {
     const maaOutcome = await playWithMaa({
       device,
@@ -348,6 +355,7 @@ async function playWithMaa({ device, packageName, target, goal, task, selectionR
     log(error);
     return { handled: false, error };
   }
+  const taskProfile = maaConfig.taskProfiles?.[task] || {};
 
   maaProbe = await maaRunner.probe();
   runtimeStatus.capabilities.maa = {
@@ -426,18 +434,32 @@ async function playWithMaa({ device, packageName, target, goal, task, selectionR
     return { handled: true, result };
   }
 
-  await notify("这局让 MAA 接一下手，我只放了一个安全任务：打一把，不动药和石头。");
+  await notify(
+    taskProfile.domain === "arknights_roguelike"
+      ? "这局开肉鸽实训，我只放一局，不买源石、不投资源石锭。打完我会把结果写进脑子复盘。"
+      : "这局让 MAA 接一下手，我只放了一个安全任务：打一把，不动药和石头。",
+  );
   const result = await maaRunner.run({
     task,
     address: device,
-    timeoutMs: Number(maaConfig.maxRuntimeMinutes || 20) * 60_000,
+    timeoutMs: Number(
+      taskProfile.maxRuntimeMinutes || maaConfig.maxRuntimeMinutes || 20,
+    ) * 60_000,
+    verbose: taskProfile.verbose === true,
   });
+  const learningRecord = buildMaaLearningRecord({ task, taskProfile, result });
   const factualSummary = result.ok
     ? [
         `MAA completed task ${task} for ${target.name} (${packageName}).`,
         `MAA CLI ${result.cliVersion || "unknown"}, core ${result.coreVersion || "unknown"}.`,
         `Completed task chains: ${result.completed?.map((item) => item.name).join(", ") || "none reported"}.`,
+        learningRecord.meaningful === false
+          ? "This run is not a meaningful learning sample because no exploration or combat started."
+          : "",
         result.battles?.length ? `Battle output: ${result.battles.join(" | ")}` : "",
+        learningRecord.evidence?.length
+          ? `Roguelike evidence:\n${learningRecord.evidence.slice(-60).join("\n")}`
+          : "",
       ].filter(Boolean).join("\n")
     : [
         `MAA task ${task} failed during ${result.phase || "execution"}.`,
@@ -455,19 +477,25 @@ async function playWithMaa({ device, packageName, target, goal, task, selectionR
     phase: result.phase,
     ok: result.ok,
     logFile: result.logFile,
-  }, factualSummary, true).catch(() => null);
+    learningRecord,
+  }, factualSummary, learningRecord.meaningful !== false).catch(() => null);
 
-  const qqSummary = buildMaaQqSummary({ game: target.name, result });
+  const qqSummary = buildMaaQqSummary({
+    game: target.name,
+    result: learningRecord,
+    taskProfile,
+  });
   runtimeStatus.currentTarget = null;
   runtimeStatus.lastSession = {
     engine: "maa",
     game: target.name,
     packageName,
     task,
-    ok: result.ok,
+    ok: learningRecord.meaningful !== false,
     completedTasks: result.completedTasks || 0,
     error: result.error || null,
     logFile: result.logFile || null,
+    learningRecord,
     summary: factualSummary,
     qqSummary,
     completedAt: new Date().toISOString(),

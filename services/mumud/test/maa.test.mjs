@@ -5,7 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   buildMaaArgs,
+  buildMaaLearningRecord,
   buildMaaQqSummary,
+  extractRoguelikeEvidence,
   isSupportedMaaResolution,
   MaaRunner,
   parseAndroidDisplaySize,
@@ -19,11 +21,23 @@ test("MAA only accepts fixed safe tasks from the allowlist", () => {
       "com.hypergryph.arknights": "arknights-safe",
       "com.example.unsafe": "mall-and-gacha",
     },
-    taskAllowlist: ["arknights-safe"],
+    taskAllowlist: ["arknights-safe", "arknights-roguelike-lab"],
+    hintTasks: [{
+      task: "arknights-roguelike-lab",
+      keywords: ["肉鸽", "萨卡兹"],
+    }],
   };
   assert.equal(resolveMaaTask("com.hypergryph.arknights", config), "arknights-safe");
   assert.equal(resolveMaaTask("com.example.unsafe", config), null);
   assert.equal(resolveMaaTask("com.example.missing", config), null);
+  assert.equal(
+    resolveMaaTask("com.hypergryph.arknights", config, "去打萨卡兹肉鸽"),
+    "arknights-roguelike-lab",
+  );
+  assert.equal(
+    resolveMaaTask("com.hypergryph.arknights", config, "随便打一把"),
+    "arknights-safe",
+  );
 });
 
 test("MAA device resolution accepts only official landscape modes", () => {
@@ -51,6 +65,11 @@ test("MAA arguments reject injected task and device strings", () => {
   ]);
   assert.throws(() => buildMaaArgs({ task: "run; rm", address: "127.0.0.1:16384" }));
   assert.throws(() => buildMaaArgs({ task: "arknights-safe", address: "bad device" }));
+  assert.deepEqual(buildMaaArgs({
+    task: "arknights-roguelike-lab",
+    address: "127.0.0.1:16384",
+    verbose: true,
+  }).slice(-1), ["-v"]);
 });
 
 test("MAA callback output is reduced to completed task chains and errors", () => {
@@ -74,6 +93,56 @@ test("MAA QQ summary stays in BigFish's short casual voice", () => {
   assert.match(summary, /MAA/);
   assert.match(summary, /没动药也没动石头/);
   assert.ok(summary.length < 160);
+});
+
+test("Roguelike log evidence and learning records stay structured", () => {
+  const output = [
+    "[INF] Roguelike theme Sarkaz difficulty 8",
+    "[INF] floor 2 node combat selected",
+    "[INF] recruited 古米",
+    "unrelated spinner message",
+    "[INF] battle completed",
+  ].join("\n");
+  assert.deepEqual(extractRoguelikeEvidence(output), [
+    "[INF] Roguelike theme Sarkaz difficulty 8",
+    "[INF] floor 2 node combat selected",
+    "[INF] recruited 古米",
+    "[INF] battle completed",
+  ]);
+  const record = buildMaaLearningRecord({
+    task: "arknights-roguelike-lab",
+    taskProfile: {
+      domain: "arknights_roguelike",
+      theme: "Sarkaz",
+      mode: 0,
+      squad: "指挥分队",
+      difficulty: -1,
+      startsCount: 1,
+      investmentEnabled: false,
+    },
+    result: { ok: true, phase: "completed", completedTasks: 2, outputTail: output },
+  });
+  assert.equal(record.domain, "arknights_roguelike");
+  assert.equal(record.theme, "Sarkaz");
+  assert.equal(record.investmentEnabled, false);
+  assert.equal(record.evidence.length, 4);
+  assert.equal(record.meaningful, false);
+
+  const started = buildMaaLearningRecord({
+    task: "arknights-roguelike-jiegarden",
+    taskProfile: { domain: "arknights_roguelike", theme: "JieGarden" },
+    result: {
+      ok: true,
+      phase: "completed",
+      completedTasks: 2,
+      outputTail: "Roguelike Start\nStart exploration 1 times\nStartCombat 驱虫",
+    },
+  });
+  assert.equal(started.meaningful, true);
+  assert.match(buildMaaQqSummary({
+    result: { ok: true, meaningful: false },
+    taskProfile: { domain: "arknights_roguelike", theme: "Sarkaz" },
+  }), /正在玩别的主题/);
 });
 
 test("missing MAA installation fails its preflight instead of pretending to play", async () => {

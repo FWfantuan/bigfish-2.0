@@ -7,6 +7,12 @@
   "missingGameReminderMinutes": 360,
   "gameAliases": {
     "明日方舟": "com.hypergryph.arknights",
+    "明日方舟肉鸽": "com.hypergryph.arknights",
+    "界园肉鸽": "com.hypergryph.arknights",
+    "萨卡兹肉鸽": "com.hypergryph.arknights",
+    "萨米肉鸽": "com.hypergryph.arknights",
+    "傀影肉鸽": "com.hypergryph.arknights",
+    "水月肉鸽": "com.hypergryph.arknights",
     "命运-冠位指定": "com.bilibili.fatego",
     "FGO": "com.bilibili.fatego"
   },
@@ -34,10 +40,122 @@
     "adbPath": "${ADB}",
     "maxRuntimeMinutes": 20,
     "taskAllowlist": [
-      "arknights-safe"
+      "arknights-safe",
+      "arknights-roguelike-jiegarden",
+      "arknights-roguelike-sarkaz",
+      "arknights-roguelike-sami",
+      "arknights-roguelike-phantom",
+      "arknights-roguelike-mizuki"
     ],
     "safeTasks": {
       "com.hypergryph.arknights": "arknights-safe"
+    },
+    "hintTasks": [
+      {
+        "task": "arknights-roguelike-sarkaz",
+        "keywords": [
+          "萨卡兹肉鸽",
+          "萨卡兹集成战略",
+          "无终奇语"
+        ]
+      },
+      {
+        "task": "arknights-roguelike-sami",
+        "keywords": [
+          "萨米肉鸽",
+          "萨米集成战略",
+          "银凇止境"
+        ]
+      },
+      {
+        "task": "arknights-roguelike-phantom",
+        "keywords": [
+          "傀影肉鸽",
+          "傀影集成战略",
+          "猩红孤钻"
+        ]
+      },
+      {
+        "task": "arknights-roguelike-mizuki",
+        "keywords": [
+          "水月肉鸽",
+          "水月集成战略",
+          "海沫"
+        ]
+      },
+      {
+        "task": "arknights-roguelike-jiegarden",
+        "keywords": [
+          "界园肉鸽",
+          "界园集成战略",
+          "岁的界园志异",
+          "肉鸽",
+          "集成战略",
+          "roguelike"
+        ]
+      }
+    ],
+    "taskProfiles": {
+      "arknights-roguelike-jiegarden": {
+        "domain": "arknights_roguelike",
+        "theme": "JieGarden",
+        "mode": 0,
+        "squad": "指挥分队",
+        "roles": "稳扎稳打",
+        "difficulty": -1,
+        "startsCount": 1,
+        "investmentEnabled": false,
+        "maxRuntimeMinutes": 45,
+        "verbose": true
+      },
+      "arknights-roguelike-sarkaz": {
+        "domain": "arknights_roguelike",
+        "theme": "Sarkaz",
+        "mode": 0,
+        "squad": "指挥分队",
+        "roles": "稳扎稳打",
+        "difficulty": -1,
+        "startsCount": 1,
+        "investmentEnabled": false,
+        "maxRuntimeMinutes": 45,
+        "verbose": true
+      },
+      "arknights-roguelike-sami": {
+        "domain": "arknights_roguelike",
+        "theme": "Sami",
+        "mode": 0,
+        "squad": "指挥分队",
+        "roles": "稳扎稳打",
+        "difficulty": -1,
+        "startsCount": 1,
+        "investmentEnabled": false,
+        "maxRuntimeMinutes": 45,
+        "verbose": true
+      },
+      "arknights-roguelike-phantom": {
+        "domain": "arknights_roguelike",
+        "theme": "Phantom",
+        "mode": 0,
+        "squad": "指挥分队",
+        "roles": "稳扎稳打",
+        "difficulty": -1,
+        "startsCount": 1,
+        "investmentEnabled": false,
+        "maxRuntimeMinutes": 45,
+        "verbose": true
+      },
+      "arknights-roguelike-mizuki": {
+        "domain": "arknights_roguelike",
+        "theme": "Mizuki",
+        "mode": 0,
+        "squad": "指挥分队",
+        "roles": "稳扎稳打",
+        "difficulty": -1,
+        "startsCount": 1,
+        "investmentEnabled": false,
+        "maxRuntimeMinutes": 45,
+        "verbose": true
+      }
     },
     "supportedResolutions": [
       [1280, 720],

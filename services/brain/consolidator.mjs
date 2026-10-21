@@ -85,7 +85,7 @@ ${JSON.stringify(payload).slice(0, 45000)}
   "skills": [
     {
       "name": "技能名称",
-      "domain": "ff14|bilibili|computer|android|social|general",
+      "domain": "ff14|bilibili|computer|android|arknights_roguelike|social|general",
       "trigger": "什么情况下使用",
       "steps": ["步骤1", "步骤2"],
       "success": true
@@ -96,6 +96,7 @@ ${JSON.stringify(payload).slice(0, 45000)}
 规则：
 - 只沉淀以后仍有价值的信息；短期刷屏和一次性寒暄不要写成事实。
 - 同一流程只有确实成功时才生成技能；失败经历写成教训和失败技能。
+- arknights_roguelike 技能只能总结给定日志证据支持的路线、招募、资源或节点选择；不能把单次运气当作规律。
 - 技能步骤要简短、可执行。
 - 私聊内容不得沉淀到群 scope。
 - 已有目标表里的目标 id 必须优先复用；同一件事只更新已有目标，禁止新建标题带“合并重复”“唯一入口”之类字样的第二条目标。

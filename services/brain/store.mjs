@@ -22,6 +22,12 @@ function canonicalSkillKey(item) {
     .slice(0, 500);
 }
 
+function skillPromotionPolicy(domain) {
+  return domain === "arknights_roguelike"
+    ? { minimumEvidence: 5, minimumSuccessRate: 0.6, minimumSuccesses: 3 }
+    : { minimumEvidence: 2, minimumSuccessRate: 0, minimumSuccesses: 0 };
+}
+
 export function canonicalGoalKey(title) {
   let value = String(title || "")
     .normalize("NFKC")
@@ -361,7 +367,16 @@ export class BrainStore {
       const evidence = existing.evidence_count + 1;
       const success = existing.success_count + (skill.success === false ? 0 : 1);
       const failure = existing.failure_count + (skill.success === false ? 1 : 0);
-      const status = evidence >= 2 ? "active" : existing.status;
+      const policy = skillPromotionPolicy(domain);
+      const successRate = evidence > 0 ? success / evidence : 0;
+      const status = evidence >= policy.minimumEvidence
+          && success >= policy.minimumSuccesses
+          && successRate >= policy.minimumSuccessRate
+        ? "active"
+        : evidence >= policy.minimumEvidence
+          && successRate < policy.minimumSuccessRate
+          ? "retired"
+          : "candidate";
       this.db.prepare(`
         UPDATE skills SET steps_json=?,evidence_count=?,success_count=?,failure_count=?,status=?,updated_at=?
         WHERE skill_key=?

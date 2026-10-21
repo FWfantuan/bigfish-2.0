@@ -117,3 +117,24 @@ test("goal upsert reuses an explicit existing goal id", async (t) => {
   assert.equal(updated.id, goal.id);
   assert.equal(store.goals("group:4", "active", 20).length, 1);
 });
+
+test("roguelike skills require repeated successful evidence before activation", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "bigfish-brain-"));
+  const store = new BrainStore(join(dir, "brain.sqlite3"));
+  t.after(async () => {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  const skill = {
+    name: "萨卡兹低希望优先补地面",
+    domain: "arknights_roguelike",
+    trigger: "萨卡兹第二层希望不足",
+    steps: ["停止强拿高费六星", "优先补低费稳定地面位"],
+    success: true,
+  };
+  for (let index = 0; index < 4; index += 1) store.upsertSkill("group:5", skill);
+  assert.equal(store.skills("group:5", false)[0].status, "candidate");
+  store.upsertSkill("group:5", skill);
+  assert.equal(store.skills("group:5", false)[0].status, "active");
+  assert.equal(store.skills("group:5")[0].success_count, 5);
+});

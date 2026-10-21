@@ -1,0 +1,28 @@
+# One bounded Integrated Strategies run for learning. This task does not buy
+# rewards, use paid currency, or invest Originium Ingots.
+
+[[tasks]]
+name = "Open Arknights"
+type = "StartUp"
+
+[tasks.params]
+client_type = "Official"
+start_game_enabled = true
+
+[[tasks]]
+name = "JieGarden roguelike lab"
+type = "Roguelike"
+
+[tasks.params]
+theme = "JieGarden"
+mode = 0
+squad = "指挥分队"
+roles = "稳扎稳打"
+starts_count = 1
+difficulty = -1
+stop_at_final_boss = false
+stop_at_max_level = false
+investment_enabled = false
+collectible_mode_shopping = false
+monthly_squad_auto_iterate = false
+deep_exploration_auto_iterate = false
