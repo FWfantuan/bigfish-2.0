@@ -60,6 +60,7 @@ test("consolidator turns experiences into facts and skill candidates", async (t)
     decide: async () => ({
       decision: {
         reflection: "多次查版本后应先看官方公告。",
+        self_update: { mood: "更谨慎", focus: "官方来源", desires: ["减少误判"] },
         lessons: ["先核对来源"],
         facts: [{ text: "查版本应优先用官方公告", confidence: 0.9, importance: 0.8 }],
         skills: [{
@@ -76,6 +77,22 @@ test("consolidator turns experiences into facts and skill candidates", async (t)
   assert.equal(result.facts, 1);
   assert.equal(store.facts("group:2")[0].text, "查版本应优先用官方公告");
   assert.equal(store.skills("group:2", false)[0].status, "candidate");
+  assert.equal(store.getSelf("group:2").focus, "官方来源");
+});
+
+test("global memories are available to every scope without copying private goals", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "bigfish-brain-"));
+  const store = new BrainStore(join(dir, "brain.sqlite3"));
+  t.after(async () => { store.close(); await rm(dir, { recursive: true, force: true }); });
+  store.setSelf("global", { focus: "长期学习" });
+  store.addFact("global", "遇到不确定动作先观察再行动", { importance: 1 });
+  store.addFact("group:private", "只属于这个群的事实", { importance: 1 });
+  store.createGoal("group:private", "群内目标");
+  const context = store.context("group:other");
+  assert.equal(context.facts.some((item) => item.text === "遇到不确定动作先观察再行动"), true);
+  assert.equal(context.facts.some((item) => item.text === "只属于这个群的事实"), false);
+  assert.equal(context.goals.some((item) => item.title === "群内目标"), false);
+  assert.equal(context.self.focus, "长期学习");
 });
 
 test("goal deduplication merges variant titles and keeps one active entry", async (t) => {

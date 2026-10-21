@@ -303,10 +303,22 @@ export class BrainStore {
   }
 
   facts(scope, limit = 20) {
-    return this.db.prepare(`
+    const rows = this.db.prepare(`
       SELECT text,confidence,importance,source,updated_at AS updatedAt FROM facts
-      WHERE scope=? ORDER BY importance DESC,confidence DESC,updated_at DESC LIMIT ?
-    `).all(scope, limit);
+      WHERE scope=? ORDER BY updated_at DESC LIMIT ?
+    `).all(scope, Math.max(limit * 4, 40));
+    const nowMs = Date.now();
+    return rows
+      .map((row) => ({
+        ...row,
+        // Recency matters, but a durable high-importance fact should not vanish
+        // merely because it was not mentioned in the last few turns.
+        retrievalScore: Number(row.importance || 0) * Number(row.confidence || 0)
+          * (0.65 + 0.35 * Math.exp(-Math.max(0, nowMs - Date.parse(row.updatedAt || 0)) / (30 * 86400000))),
+      }))
+      .sort((a, b) => b.retrievalScore - a.retrievalScore)
+      .slice(0, limit)
+      .map(({ retrievalScore, ...row }) => row);
   }
 
   recentEvents(scope, limit = 30) {
@@ -414,6 +426,14 @@ export class BrainStore {
       .map((row) => ({ ...row, steps: json(row.steps_json, []) }));
   }
 
+  globalFacts(limit = 20) {
+    return this.facts("global", limit);
+  }
+
+  globalSkills(activeOnly = true) {
+    return this.skills("global", activeOnly);
+  }
+
   createApproval(scope, action, reason, payload = {}) {
     const item = { id: randomUUID(), scope, action: String(action).slice(0, 500), reason: String(reason).slice(0, 2000), payload, status: "pending", createdAt: now() };
     this.db.prepare("INSERT INTO approvals(id,scope,action,reason,payload_json,status,created_at) VALUES (?,?,?,?,?,?,?)")
@@ -435,15 +455,27 @@ export class BrainStore {
   }
 
   context(scope) {
+    const localSelf = this.getSelf(scope);
+    const globalSelf = scope === "global" ? localSelf : this.getSelf("global");
+    const localFacts = this.facts(scope, 30);
+    const globalFacts = scope === "global" ? [] : this.globalFacts(20);
+    const facts = [...localFacts, ...globalFacts]
+      .filter((item, index, all) => all.findIndex((candidate) => candidate.text === item.text) === index)
+      .slice(0, 30);
+    const localSkills = this.skills(scope);
+    const globalSkills = scope === "global" ? [] : this.globalSkills();
+    const skills = [...localSkills, ...globalSkills]
+      .filter((item, index, all) => all.findIndex((candidate) => candidate.skill_key === item.skill_key) === index)
+      .slice(0, 20);
     return {
       scope,
-      self: this.getSelf(scope),
+      self: scope === "global" || localSelf.updatedAt ? { ...globalSelf, ...localSelf } : globalSelf,
       goals: this.goals(scope),
-      facts: this.facts(scope),
+      facts,
       recentEvents: this.recentEvents(scope, 12),
       recentActions: this.recentActions(scope, 12),
       reflections: this.reflections(scope, 5).map(({ summary, lessons, created_at }) => ({ summary, lessons, createdAt: created_at })),
-      skills: this.skills(scope),
+      skills,
       approvals: this.approvals(scope, "pending"),
     };
   }

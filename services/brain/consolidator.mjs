@@ -24,6 +24,10 @@ export class BrainConsolidator {
       const facts = Array.isArray(decision.facts) ? decision.facts : [];
       const skills = Array.isArray(decision.skills) ? decision.skills : [];
       const goalUpdates = Array.isArray(decision.goal_updates) ? decision.goal_updates : [];
+      const selfUpdate = decision.self_update && typeof decision.self_update === "object"
+        ? decision.self_update
+        : null;
+      if (selfUpdate) this.store.setSelf(scope, selfUpdate);
       this.store.addReflection(scope, reflection || "这一批经历没有形成明确结论。", decision.lessons || [], {
         facts,
         skills,
@@ -75,6 +79,7 @@ ${JSON.stringify(payload).slice(0, 45000)}
 只输出 JSON：
 {
   "reflection": "第一人称复盘，说明发生了什么、哪里做对/做错、今后怎么做",
+  "self_update": {"mood": "更新后的心情", "focus": "接下来关注什么", "desires": ["仍想推进的事情"]},
   "lessons": ["可执行的教训"],
   "facts": [
     {"text": "长期稳定的事实或偏好", "confidence": 0.8, "importance": 0.6}
