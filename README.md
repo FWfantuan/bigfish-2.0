@@ -1,6 +1,6 @@
 # 大肥鱼 2.0
 
-大肥鱼 2.0 使用 DeepSeek Harness（DSH）作为 Agent 主机，目标是具备持续状态、记忆、目标、主动发言和真实设备操作能力。AstrBot 在迁移期间保留现有 FF14、语音和 QQ 功能。
+大肥鱼 2.0 使用 DeepSeek Harness（DSH）作为 Agent 主机，目标是具备持续状态、记忆、目标、主动发言和真实设备操作能力。旧 AstrBot、BigFish Core 和旧语音服务已经停止，NapCat 作为 QQ 连接层保留。
 
 当前 `dev` 分支已经包含：
 
@@ -30,6 +30,7 @@ QQ / NapCat            ├─ 浏览器
 ```powershell
 pnpm install
 pnpm dsh:patch
+./scripts/start-dsh-stack.ps1
 pnpm dsh:web
 pnpm dsh:worker
 pnpm social:start
@@ -43,7 +44,9 @@ pnpm social:test
 - [迁移到 DSH](docs/migration-to-dsh.md)
 - [主动社交层](docs/active-social.md)
 
-## AstrBot 过渡命令
+## 旧 AstrBot 命令
+
+以下命令属于已停用的旧体系，保留在历史代码中供迁移参考。
 
 ```text
 agent状态

@@ -45,7 +45,14 @@ BIGFISH_OWNER_QQ=2440298506
 ADB=D:\MuMuPlayer\nx_device\12.0\shell\adb.exe
 ```
 
-NapCat 需要开放一个只绑定 `127.0.0.1:3001` 的正向 WebSocket server，现有的 AstrBot 反向 WebSocket 可以继续保留。
+NapCat 只保留一个绑定 `127.0.0.1:3001` 的正向 WebSocket server。旧 AstrBot 反向 WebSocket 已移除，避免两套 Agent 同时消费 QQ 消息。
+
+电脑重启后运行：
+
+```powershell
+pnpm dsh:patch
+./scripts/start-dsh-stack.ps1
+```
 
 `pnpm dsh:patch` 应用两个当前社区的兼容修正：
 
