@@ -28,7 +28,7 @@ export class DshDecisionMaker {
     this.bin = existsSync(configuredBin) ? configuredBin : null;
   }
 
-  async decide({ prompt, sessionId, timeoutMs }) {
+  async decide({ prompt, sessionId, timeoutMs, onEvent }) {
     if (!this.bin) throw new Error(`DSH entry not found: ${DSH_BIN}; run pnpm install`);
     const args = [this.bin, "--profile", this.config.profile, "--json"];
     if (sessionId) args.push("--session-id", sessionId);
@@ -52,6 +52,9 @@ export class DshDecisionMaker {
       if (!line.trim().startsWith("{")) return;
       try {
         const event = JSON.parse(line);
+        if (typeof onEvent === "function") {
+          void Promise.resolve(onEvent(event)).catch(() => undefined);
+        }
         if (event.type === "session" && event.sessionId) discoveredSession = event.sessionId;
         if (event.type === "final" && typeof event.text === "string") {
           finalText = event.text;

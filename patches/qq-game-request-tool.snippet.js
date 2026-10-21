@@ -83,7 +83,7 @@ function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
     }));
     const statusDisposable = ctx.tools.register(defineTool({
         name: 'bigfish_gameplay_status',
-        description: 'Read the authoritative BigFish gameplay worker state. Use this for owner follow-up questions while a game is queued or running. It is read-only and never operates the emulator.',
+        description: 'Read the authoritative BigFish gameplay worker state, including the current game-agent action, recent results and latest screenshot path. Use this for owner follow-up questions while a game is queued or running. It is read-only and never operates the emulator.',
         parameters: {},
         output: {
             schema: {
@@ -117,15 +117,21 @@ function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
                     return null;
                 }
             };
-            const [state, status, request, activeQuestion] = await Promise.all([
+            const [state, status, request, activeQuestion, live] = await Promise.all([
                 readJson('state.json'),
                 readJson('status.json'),
                 readJson('request.json'),
                 readJson('question.active.json'),
+                readJson('live.json'),
             ]);
             const activeSession = state?.activeSession ?? null;
-            const activeGroupId = String(state?.activeGroupId || activeSession?.groupId || '');
-            if (state?.running === true && activeGroupId && activeGroupId !== String(target)) {
+            const activeGroupId = String(
+                state?.activeGroupId
+                || activeSession?.groupId
+                || (live?.active === true ? live.groupId : '')
+                || '',
+            );
+            if ((state?.running === true || live?.active === true) && activeGroupId && activeGroupId !== String(target)) {
                 throw new Error('当前游戏由另一个白名单群发起；游戏状态只能由发起群读取');
             }
             const value = {
@@ -152,6 +158,25 @@ function registerBigFishGameRequestTool(ctx, cfg, officialMode) {
                     }
                     : null,
                 interrupted_session: state?.interruptedSession ?? null,
+                live: live
+                    ? {
+                        active: live.active === true,
+                        session_id: live.sessionId ?? null,
+                        phase: live.phase ?? null,
+                        game: live.game ?? null,
+                        mode: live.mode ?? null,
+                        stage_name: live.stageName ?? null,
+                        current_summary: live.current?.summary ?? null,
+                        current_status: live.current?.status ?? null,
+                        current_result: live.current?.result ?? null,
+                        last_visible_text: live.lastVisibleText ?? null,
+                        latest_screenshot_path: live.latestScreenshotPath || null,
+                        recent_events: Array.isArray(live.recentEvents)
+                            ? live.recentEvents.slice(-10)
+                            : [],
+                        updated_at: live.updatedAt ?? null,
+                    }
+                    : null,
                 ownership:
                     'The bigfish-play worker owns MuMu while queued or running. Do not call android_interact, android_launch_app, or shell commands to duplicate its gameplay. Reply from this state without polling.',
             };

@@ -23,6 +23,7 @@ test("finishes after the final event even when a tool keeps the child alive", as
       bin,
       [
         'process.stdout.write(JSON.stringify({ type: "session", sessionId: "session-test" }) + "\\n");',
+        'process.stdout.write(JSON.stringify({ type: "tool/call", data: { name: "android_screenshot", arguments: "{}" } }) + "\\n");',
         'process.stdout.write(JSON.stringify({ type: "final", text: "{\\"action\\":\\"wait\\"}" }) + "\\n");',
         "setInterval(() => {}, 1000);",
       ].join("\n"),
@@ -30,9 +31,15 @@ test("finishes after the final event even when a tool keeps the child alive", as
     );
     const dsh = new DshDecisionMaker({ bin, profile: "test" });
     const started = Date.now();
-    const result = await dsh.decide({ prompt: "test", timeoutMs: 5000 });
+    const observed = [];
+    const result = await dsh.decide({
+      prompt: "test",
+      timeoutMs: 5000,
+      onEvent: (event) => observed.push(event.type),
+    });
     assert.equal(result.decision.action, "wait");
     assert.equal(result.sessionId, "session-test");
+    assert.deepEqual(observed, ["session", "tool/call", "final"]);
     assert.ok(Date.now() - started < 2000);
   } finally {
     await rm(directory, { recursive: true, force: true });

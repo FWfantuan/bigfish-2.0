@@ -32,6 +32,12 @@ import {
   parseAndroidDisplaySize,
   resolveMaaTask,
 } from "./maa.mjs";
+import {
+  applyLiveGameplayEvent,
+  createLiveGameplayState,
+  isLiveGameplayTool,
+  reloadLiveGameplayState,
+} from "./activity.mjs";
 
 const execFileAsync = promisify(execFile);
 await loadEnvironmentFiles([".env", resolve(homedir(), ".dsh/.env")]);
@@ -40,10 +46,13 @@ const gameConfig = JSON.parse(await readFile("config/gameplay.json", "utf8"));
 const statePath = resolve(process.env.BIGFISH_GAMEPLAY_STATE || "data/mumud/state.json");
 const statusPath = resolve(process.env.BIGFISH_GAMEPLAY_STATUS || "data/mumud/status.json");
 const requestPath = resolve(process.env.BIGFISH_GAMEPLAY_REQUEST || "data/mumud/request.json");
+const liveStatePath = resolve(process.env.BIGFISH_GAMEPLAY_LIVE || "data/mumud/live.json");
 const questionRequestPath = resolve("data/mumud/question.request.json");
 const questionActivePath = resolve("data/mumud/question.active.json");
 const questionAnswerPath = resolve("data/mumud/question.answer.json");
 const state = await loadState(statePath);
+let liveGameplayState = await loadLiveGameplayState(liveStatePath);
+let liveSaveChain = Promise.resolve();
 const interruptedSession = state.running || state.activeSession
   ? {
       groupId: String(state.activeGroupId || state.activeSession?.groupId || ""),
@@ -57,6 +66,11 @@ if (interruptedSession) {
   state.activeGroupId = "";
   state.activeSession = null;
   state.interruptedSession = interruptedSession;
+  if (liveGameplayState) {
+    liveGameplayState.active = false;
+    liveGameplayState.phase = "interrupted";
+    scheduleLiveGameplaySave();
+  }
   await saveState();
   log(`recovered interrupted gameplay marker for group=${interruptedSession.groupId || "unknown"}`);
 }
@@ -247,6 +261,12 @@ async function poll() {
       }
     }
   } finally {
+    if (liveGameplayState?.active) {
+      liveGameplayState.active = false;
+      liveGameplayState.phase = "idle";
+      liveGameplayState.updatedAt = new Date().toISOString();
+      scheduleLiveGameplaySave();
+    }
     state.running = false;
     state.activeGroupId = "";
     state.activeSession = null;
@@ -476,6 +496,7 @@ async function playChosenGame({
       prompt,
       sessionId,
       timeoutMs: activeTarget.maxSessionMinutes * 60000,
+      onEvent: (event) => recordGameplayActivity(event, scope),
     });
   } finally {
     await Promise.all([stopObserver(), stopQuestionBridge()]);
@@ -495,6 +516,14 @@ async function playChosenGame({
     goalId: goal?.id,
     selectionReason,
   }, summary, true).catch(() => null);
+  if (liveGameplayState) {
+    liveGameplayState.active = false;
+    liveGameplayState.phase = "completed";
+    liveGameplayState.lastVisibleText = qqSummary;
+    liveGameplayState.updatedAt = new Date().toISOString();
+    scheduleLiveGameplaySave();
+    await flushLiveGameplayState();
+  }
   runtimeStatus.currentTarget = null;
   runtimeStatus.lastSession = {
     engine: "bigfish-play",
@@ -1184,6 +1213,15 @@ async function beginActiveSession({
     updatedAt: new Date().toISOString(),
   };
   state.interruptedSession = null;
+  liveGameplayState = createLiveGameplayState({
+    groupId,
+    game: target?.name || packageName,
+    packageName,
+    target,
+    startedAt: new Date().toISOString(),
+  });
+  liveGameplayState.engine = engine;
+  await saveLiveGameplayStateNow();
   await saveState();
 }
 
@@ -1196,7 +1234,78 @@ async function updateActiveSession(update) {
     groupId: state.activeGroupId,
     updatedAt: new Date().toISOString(),
   };
+  if (liveGameplayState) {
+    liveGameplayState.groupId = state.activeGroupId;
+    liveGameplayState.game = state.activeSession.game || liveGameplayState.game;
+    liveGameplayState.packageName = state.activeSession.packageName || liveGameplayState.packageName;
+    liveGameplayState.target = state.activeSession.target || liveGameplayState.target;
+    liveGameplayState.phase = update.phase || liveGameplayState.phase;
+    liveGameplayState.mode = update.mode || liveGameplayState.mode;
+    liveGameplayState.updatedAt = new Date().toISOString();
+    scheduleLiveGameplaySave();
+  }
   await saveState();
+}
+
+function recordGameplayActivity(event, scope) {
+  if (!liveGameplayState) return;
+  liveGameplayState = applyLiveGameplayEvent(liveGameplayState, event);
+  scheduleLiveGameplaySave();
+
+  const type = String(event?.type || "");
+  const data = event?.data || {};
+  const tool = String(data.name || liveGameplayState.current?.tool || "");
+  if (!isLiveGameplayTool(tool)) return;
+
+  if (type === "tool/call") {
+    void brain.observe(scope, "gameplay_tool_started", {
+      tool,
+      summary: liveGameplayState.current?.summary || tool,
+      phase: liveGameplayState.phase,
+    }, true).catch(() => null);
+  } else if (type === "tool/result") {
+    const action = liveGameplayState.current;
+    void brain.observe(scope, "gameplay_tool_result", {
+      tool,
+      summary: action?.summary || tool,
+      success: action?.status === "completed",
+      result: action?.result?.slice(0, 600) || "",
+      screenshotPath: action?.screenshotPath || "",
+    }, action?.status === "completed").catch(() => null);
+  }
+}
+
+function scheduleLiveGameplaySave() {
+  if (!liveGameplayState) return;
+  const snapshot = structuredClone(liveGameplayState);
+  liveSaveChain = liveSaveChain
+    .then(() => writeLiveGameplayState(snapshot))
+    .catch((error) => log(`live gameplay state save failed: ${error.message}`));
+}
+
+async function flushLiveGameplayState() {
+  await liveSaveChain;
+}
+
+async function saveLiveGameplayStateNow() {
+  if (!liveGameplayState) return;
+  await writeLiveGameplayState(liveGameplayState);
+}
+
+async function writeLiveGameplayState(value) {
+  await mkdir(dirname(liveStatePath), { recursive: true });
+  const temporary = `${liveStatePath}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(temporary, liveStatePath);
+}
+
+async function loadLiveGameplayState(path) {
+  try {
+    return reloadLiveGameplayState(JSON.parse(await readFile(path, "utf8")));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return null;
+  }
 }
 
 async function reportInterruptedGameplay(session) {
