@@ -97,3 +97,23 @@ test("global cooldown blocks proactive chatter", () => {
   assert.equal(verdict.ok, false);
   assert.equal(verdict.reason, "global-cooldown");
 });
+
+test("tool requests may only mention the owner", () => {
+  const decision = normalizeDecision({
+    action: "request_tool",
+    target_group: "100",
+    at_qq: "2",
+    tool_domain: "computer",
+    message: "这个我想上电脑看看，能开吗",
+    reason: "需要检查实际桌面状态",
+  });
+  const verdict = validateDecision(decision, {
+    config,
+    groupId: "100",
+    state: baseState(),
+    recentSenderIds: new Set(["2"]),
+    now: new Date(2026, 0, 1, 12, 0),
+  });
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.reason, "tool-request-owner-only");
+});

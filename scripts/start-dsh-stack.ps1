@@ -52,6 +52,7 @@ if (-not $napcatMain) {
     Write-Output "NapCat bot instance is running with PID $($napcatMain.ProcessId)"
 }
 
+Start-HiddenService -Name 'brain' -Arguments 'brain:start' -Port 15621
 Start-HiddenService -Name 'dsh-web' -Arguments 'dsh:web' -Port 3180
 $sociald = Get-CimInstance Win32_Process |
     Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'services[\\/]sociald[\\/]main\.mjs' } |
@@ -80,6 +81,12 @@ for ($attempt = 0; $attempt -lt 40; $attempt++) {
 
 if (-not (Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)) {
     throw 'NapCat DSH WebSocket server did not open on port 3001'
+}
+for ($attempt = 0; $attempt -lt 120; $attempt++) {
+    if (Get-NetTCPConnection -LocalPort 3180 -State Listen -ErrorAction SilentlyContinue) {
+        break
+    }
+    Start-Sleep -Milliseconds 500
 }
 if (-not (Get-NetTCPConnection -LocalPort 3180 -State Listen -ErrorAction SilentlyContinue)) {
     throw 'DSH Web did not open on port 3180'

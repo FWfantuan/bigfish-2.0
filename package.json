@@ -6,9 +6,11 @@
     "dsh:web": "dsh --profile bigfish017 --port 3180 --no-open",
     "dsh:worker": "dsh --profile bigfish-worker",
     "dsh:patch": "node scripts/apply-dsh-patches.mjs",
+    "brain:seed": "node services/brain/seed.mjs",
+    "brain:start": "node services/brain/main.mjs",
     "social:start": "node services/sociald/main.mjs",
     "reply:start": "node services/replyd/main.mjs",
-    "social:test": "node --test services/sociald/test/*.test.mjs services/replyd/test/*.test.mjs"
+    "social:test": "node --test services/sociald/test/*.test.mjs services/replyd/test/*.test.mjs services/brain/test/*.test.mjs"
   },
   "dependencies": {
     "@trycua/cua-driver": "0.37.0",

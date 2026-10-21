@@ -1,4 +1,5 @@
-const ACTIONS = new Set(["wait", "group_message"]);
+const ACTIONS = new Set(["wait", "group_message", "request_tool"]);
+const TOOL_DOMAINS = new Set(["bilibili", "browser", "computer", "android", "general"]);
 
 export function normalizeDecision(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -10,6 +11,7 @@ export function normalizeDecision(value) {
     targetQq: value.target_qq == null ? "" : String(value.target_qq),
     atQq: value.at_qq == null ? "" : String(value.at_qq),
     reason: typeof value.reason === "string" ? value.reason.trim().slice(0, 800) : "",
+    toolDomain: TOOL_DOMAINS.has(value.tool_domain) ? value.tool_domain : "",
     innerState: value.inner_state && typeof value.inner_state === "object" ? value.inner_state : {},
     memories: Array.isArray(value.memory) ? value.memory.slice(0, 5) : [],
     nextCheckMinutes: clampNumber(value.next_check_minutes, 2, 180, 10),
@@ -48,12 +50,18 @@ export function validateDecision(decision, context) {
   );
   if (duplicate) return { ok: false, reason: "duplicate-message" };
 
-  if (decision.action === "group_message") {
+  if (decision.action === "group_message" || decision.action === "request_tool") {
     const target = decision.targetGroup || groupId;
     if (!config.groups.includes(target)) return { ok: false, reason: "group-not-allowed" };
     if (!decision.atQq) return { ok: false, reason: "mention-required" };
     if (!recentSenderIds.has(decision.atQq) && decision.atQq !== config.ownerQQ) {
       return { ok: false, reason: "mention-not-in-context" };
+    }
+    if (decision.action === "request_tool" && decision.atQq !== config.ownerQQ) {
+      return { ok: false, reason: "tool-request-owner-only" };
+    }
+    if (decision.action === "request_tool" && !decision.toolDomain) {
+      return { ok: false, reason: "tool-domain-required" };
     }
     return { ok: true, decision: { ...decision, targetGroup: target } };
   }

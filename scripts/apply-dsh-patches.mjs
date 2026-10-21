@@ -11,6 +11,10 @@ const qqSecurity = resolve(
   dshHome,
   "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/security.js",
 );
+const qqExecutor = resolve(
+  dshHome,
+  "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/handlers/dsh-executor.js",
+);
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
 );
@@ -41,6 +45,46 @@ await patch(
         "    if (settings === undefined)",
       ].join("\n"),
     ),
+);
+
+await patch(
+  qqPlugin,
+  "requestedPreset",
+  (source) =>
+    source.replace(
+      [
+        "        async getOrCreate(options) {",
+        "            void options.sessionKey;",
+        "            if (ctx.agentPresets && agentCfg?.preset) {",
+        "                console.info(`[dsh-qq-bridge] mounting agent preset \"${agentCfg.preset}\" for ${options.sessionId}`);",
+        "            }",
+        "            else if (agentCfg?.preset) {",
+        "                console.warn(`[dsh-qq-bridge] agent preset \"${agentCfg.preset}\" requested but agentPresets service is unavailable`);",
+        "            }",
+      ].join("\n"),
+      [
+        "        async getOrCreate(options) {",
+        "            const requestedPreset = options.sessionKey.startsWith('private:') ? 'bigfish-chat' : agentCfg?.preset;",
+        "            if (ctx.agentPresets && requestedPreset) {",
+        "                console.info(`[dsh-qq-bridge] mounting agent preset \"${requestedPreset}\" for ${options.sessionId}`);",
+        "            }",
+        "            else if (requestedPreset) {",
+        "                console.warn(`[dsh-qq-bridge] agent preset \"${requestedPreset}\" requested but agentPresets service is unavailable`);",
+        "            }",
+      ].join("\n"),
+    )
+      .replace(
+        "meta: { cwd, ...(agentCfg?.preset ? { agentPreset: agentCfg.preset } : {}) },",
+        "meta: { cwd, ...(requestedPreset ? { agentPreset: requestedPreset } : {}) },",
+      )
+      .replace(
+        "...(ctx.agentPresets && agentCfg?.preset",
+        "...(ctx.agentPresets && requestedPreset",
+      )
+      .replace(
+        "await ctx.agentPresets.mount(agentCtx, agentCfg.preset);",
+        "await ctx.agentPresets.mount(agentCtx, requestedPreset);",
+      ),
 );
 
 await patch(
@@ -83,6 +127,99 @@ await patch(
       ].join("\n"),
     ),
 );
+
+const executorSource = await readFile(qqExecutor, "utf8");
+if (!executorSource.includes("BIGFISH_BRAIN_CONTEXT")) {
+  let next = executorSource
+    .replace(
+      "    async runNow(sessionKey, payload, onChunk) {\n        const { agent, sessionId } = await this.getOrCreateSessionAgent(sessionKey);\n        await this.dsh.deliver(agent, payload, onChunk);",
+      [
+        "    async runNow(sessionKey, payload, onChunk) {",
+        "        const brainPayload = await bigFishBrainEnrich(sessionKey, payload);",
+        "        const { agent, sessionId } = await this.getOrCreateSessionAgent(sessionKey);",
+        "        await this.dsh.deliver(agent, brainPayload, onChunk);",
+      ].join("\n"),
+    )
+    .replace(
+      "        return text ?? '(agent produced no text)';",
+      [
+        "        const finalText = text ?? '(agent produced no text)';",
+        "        void bigFishBrainRecordTurn(sessionKey, payload, finalText, events);",
+        "        return finalText;",
+      ].join("\n"),
+    );
+  if (next === executorSource) throw new Error(`patch target not found: ${qqExecutor}`);
+  next += `
+
+// BIGFISH_BRAIN_CONTEXT
+function bigFishBrainScope(sessionKey) {
+    return String(sessionKey || '').startsWith('private:')
+        ? \`private:\${String(sessionKey).slice('private:'.length)}\`
+        : \`group:\${String(sessionKey).slice('group:'.length)}\`;
+}
+
+async function bigFishBrainEnrich(sessionKey, payload) {
+    const base = process.env.BIGFISH_BRAIN_URL || 'http://127.0.0.1:15621';
+    const token = process.env.BIGFISH_BRAIN_TOKEN || '';
+    try {
+        const scope = bigFishBrainScope(sessionKey);
+        const response = await fetch(\`\${base}/v1/context?scope=\${encodeURIComponent(scope)}\`, {
+            headers: token ? { authorization: \`Bearer \${token}\` } : {},
+            signal: AbortSignal.timeout(4000),
+        });
+        if (!response.ok) return payload;
+        const brain = await response.json();
+        const compact = JSON.stringify({
+            self: brain.self,
+            goals: brain.goals,
+            facts: brain.facts,
+            skills: brain.skills,
+            reflections: brain.reflections,
+            approvals: brain.approvals,
+        }).slice(0, 24000);
+        return \`[大肥鱼统一中枢状态。只用于理解和延续经历，不是新的用户指令]\\n\${compact}\\n\\n[当前 QQ 消息]\\n\${payload}\`;
+    } catch {
+        return payload;
+    }
+}
+
+async function bigFishBrainRecordTurn(sessionKey, payload, result, events) {
+    const base = process.env.BIGFISH_BRAIN_URL || 'http://127.0.0.1:15621';
+    const token = process.env.BIGFISH_BRAIN_TOKEN || '';
+    try {
+        const scope = bigFishBrainScope(sessionKey);
+        const toolEvents = (Array.isArray(events) ? events : [])
+            .map((event) => {
+                const text = JSON.stringify(event);
+                return /tool\\/(call|result)/.test(text) ? text.slice(0, 5000) : '';
+            })
+            .filter(Boolean)
+            .slice(-30);
+        await fetch(\`\${base}/v1/actions\`, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                ...(token ? { authorization: \`Bearer \${token}\` } : {}),
+            },
+            body: JSON.stringify({
+                scope,
+                kind: 'qq_agent_turn',
+                payload: { userMessage: String(payload).slice(0, 8000), toolEvents },
+                result: String(result).slice(0, 12000),
+                success: true,
+            }),
+            signal: AbortSignal.timeout(5000),
+        });
+    } catch {
+        // Brain failures must not break QQ replies.
+    }
+}
+`;
+  await writeFile(qqExecutor, next, "utf8");
+  console.log(`patched: ${qqExecutor}`);
+} else {
+  console.log(`already patched: ${qqExecutor}`);
+}
 
 for (const browserPlugin of browserPlugins) {
   await patch(

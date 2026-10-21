@@ -5,6 +5,7 @@ import { loadConfig } from "../sociald/config.mjs";
 import { DshDecisionMaker, loadEnvironmentFiles } from "../sociald/dsh.mjs";
 import { OneBotConnection } from "../sociald/onebot.mjs";
 import { inspectMessage, isSimilarReply, normalizeFollowupDecision } from "./reply-window.mjs";
+import { BrainClient } from "../shared/brain-client.mjs";
 
 await loadEnvironmentFiles([".env", resolve(homedir(), ".dsh/.env")]);
 const config = await loadConfig(process.env.BIGFISH_SOCIAL_CONFIG || "config/social.json");
@@ -12,6 +13,7 @@ const cfg = config.replyWindow;
 const statePath = resolve(process.env.BIGFISH_REPLY_STATE_PATH || "data/reply/state.json");
 const state = await loadState(statePath);
 const dsh = new DshDecisionMaker(config.dsh);
+const brain = new BrainClient();
 const timers = new Map();
 const evaluating = new Set();
 let connection;
@@ -76,7 +78,9 @@ async function evaluate(groupId) {
     const recent = group.messages.slice(-20)
       .map((item) => `${new Date(item.at).toLocaleTimeString("zh-CN", { hour12: false })} ${item.senderName}(${item.senderId}): ${item.text}`)
       .join("\n");
-    const prompt = buildFollowupPrompt({ config, groupId, group, pending, recent });
+    const scope = `group:${groupId}`;
+    const brainContext = await brain.context(scope).catch(() => null);
+    const prompt = buildFollowupPrompt({ config, groupId, group, pending, recent, brainContext });
     const result = await dsh.decide({
       prompt,
       sessionId: group.sessionId || null,
@@ -85,6 +89,7 @@ async function evaluate(groupId) {
     if (result.sessionId) group.sessionId = result.sessionId;
     const decision = normalizeFollowupDecision(result.decision);
     if (!decision.shouldReply || !decision.content || decision.content.length > cfg.maxReplyChars) {
+      await brain.action(scope, "reply_window_wait", { pending }, decision.reason || "no reply", true).catch(() => null);
       log(`group=${groupId} follow-up stayed silent: ${decision.reason || "no-reply"}`);
       return;
     }
@@ -94,6 +99,10 @@ async function evaluate(groupId) {
       return;
     }
     await connection.sendGroup(groupId, decision.content);
+    await brain.action(scope, "reply_window_followup", {
+      pending,
+      reason: decision.reason,
+    }, decision.content, true).catch(() => null);
     group.sent.push(decision.content);
     group.sent = group.sent.slice(-12);
     group.lastFollowupAt = Date.now();
@@ -106,7 +115,10 @@ async function evaluate(groupId) {
   }
 }
 
-function buildFollowupPrompt({ config: app, groupId, group, pending, recent }) {
+function buildFollowupPrompt({ config: app, groupId, group, pending, recent, brainContext }) {
+  const goals = (brainContext?.goals || []).map((item) => `- ${item.title}`).join("\n");
+  const facts = (brainContext?.facts || []).map((item) => `- ${item.text}`).join("\n");
+  const skills = (brainContext?.skills || []).map((item) => `- ${item.name}: ${item.trigger}`).join("\n");
   return `你刚在 QQ 群 ${groupId} 回过话。现在是固定 60 秒接话窗口，只有窗口内的新文字能触发本次判断。
 
 人格：
@@ -118,6 +130,15 @@ ${recent}
 
 本次待判断的新文字：
 ${pending.map((item) => `${item.senderName}(${item.senderId}): ${item.text}`).join("\n")}
+
+中枢目标：
+${goals || "暂无"}
+
+中枢长期事实：
+${facts || "暂无"}
+
+已形成技能：
+${skills || "暂无"}
 
 判断是否自然接一句。可以保持沉默；只有真正相关、有趣、能延续对话时才回复。纯表情或刷屏不应触发回复；点名别人或明显在和别人对话时保持沉默。不能使用 B站、浏览器、电脑、手机等工具。回复不需要艾特人，直接像群友插一句。日常回复通常 5～25 字。
 

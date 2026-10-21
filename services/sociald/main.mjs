@@ -6,12 +6,14 @@ import { OneBotConnection } from "./onebot.mjs";
 import { normalizeDecision, validateDecision } from "./policy.mjs";
 import { buildPrompt } from "./prompt.mjs";
 import { SocialState } from "./state.mjs";
+import { BrainClient } from "../shared/brain-client.mjs";
 
 await loadEnvironmentFiles([".env", resolve(homedir(), ".dsh/.env")]);
 const config = await loadConfig(process.env.BIGFISH_SOCIAL_CONFIG || "config/social.json");
 const state = new SocialState(process.env.BIGFISH_STATE_PATH || "data/social/state.json");
 await state.load();
 const dsh = new DshDecisionMaker(config.dsh);
+const brain = new BrainClient();
 const debounceTimers = new Map();
 const evaluating = new Set();
 let stopping = false;
@@ -47,7 +49,9 @@ async function evaluateGroup(groupId) {
   try {
     group.lastEvaluatedAt = now;
     const recentSenderIds = new Set(group.messages.slice(-40).map((item) => item.senderId));
-    const prompt = buildPrompt({ config, state: state.value, groupId });
+    const scope = `group:${groupId}`;
+    const brainContext = await brain.context(scope).catch(() => null);
+    const prompt = buildPrompt({ config, state: state.value, groupId, brainContext });
     const result = await dsh.decide({ prompt, sessionId: group.sessionId, timeoutMs: config.dsh.timeoutMs });
     if (result.sessionId) group.sessionId = result.sessionId;
     const decision = normalizeDecision(result.decision);
@@ -68,11 +72,17 @@ async function evaluateGroup(groupId) {
 
     const chosen = verdict.decision;
     state.updateSelf(chosen.innerState);
+    await brain.setSelf(scope, {
+      mood: chosen.innerState?.mood,
+      focus: chosen.innerState?.focus,
+      desire: chosen.innerState?.desire,
+    }).catch(() => null);
     state.value.self.lastThought = chosen.reason || "";
     for (const memory of chosen.memories) {
       if (!memory || typeof memory.content !== "string" || !memory.content.trim()) continue;
       const scope = typeof memory.scope === "string" && memory.scope ? memory.scope : `group:${groupId}`;
       state.remember(scope, memory.content);
+      await brain.observe(scope, "memory_candidate", { content: memory.content }, true).catch(() => null);
     }
     group.nextCheckAt =
       Date.now() + Math.max(chosen.nextCheckMinutes * 60000, config.evaluation.minEvaluationIntervalMs);
@@ -86,8 +96,34 @@ async function evaluateGroup(groupId) {
         reason: chosen.reason,
         at: Date.now(),
       });
+      await brain.action(`group:${chosen.targetGroup}`, "proactive_group_message", {
+        atQq: chosen.atQq,
+        reason: chosen.reason,
+      }, chosen.message, true).catch(() => null);
       log(`group=${chosen.targetGroup} proactive message sent: ${chosen.reason}`);
+    } else if (chosen.action === "request_tool") {
+      const approval = await brain.approval(scope, chosen.toolDomain, chosen.reason, {
+        request: chosen.message,
+        atQq: chosen.atQq,
+      }).catch(() => null);
+      const suffix = approval ? ` [申请 ${approval.id.slice(0, 8)}]` : "";
+      await connection.sendGroup(chosen.targetGroup, `${chosen.message}${suffix}`, chosen.atQq);
+      state.appendAction({
+        type: "request_tool",
+        groupId: chosen.targetGroup,
+        message: chosen.message,
+        reason: chosen.reason,
+        at: Date.now(),
+      });
+      await brain.action(scope, "tool_permission_requested", {
+        toolDomain: chosen.toolDomain,
+        approvalId: approval?.id,
+        atQq: chosen.atQq,
+      }, `${chosen.message}${suffix}`, true).catch(() => null);
+      await brain.goal(scope, `等待主人批准：${chosen.toolDomain}`, chosen.message, 2).catch(() => null);
+      log(`group=${chosen.targetGroup} requested ${chosen.toolDomain} permission from owner`);
     } else {
+      await brain.action(scope, "proactive_wait", {}, chosen.reason || "no action", true).catch(() => null);
       log(`group=${groupId} chose to wait: ${chosen.reason || "no reason"}`);
     }
     await state.save();
@@ -107,10 +143,23 @@ connection = new OneBotConnection({
     log(`OneBot ${status.kind}${status.message ? `: ${status.message}` : ""}`);
   },
   onMessage(message) {
-    if (message.senderId === config.botQQ) return;
+    if (message.senderId === config.botQQ) {
+      if (message.groupId && config.groups.includes(message.groupId)) {
+        void brain.observe(`group:${message.groupId}`, "bot_group_message", {
+          text: message.text,
+        }, true).catch(() => null);
+      }
+      return;
+    }
     if (message.groupId) {
       if (!config.groups.includes(message.groupId)) return;
       state.appendMessage(message.groupId, message);
+      void brain.observe(`group:${message.groupId}`, "group_message", {
+        senderId: message.senderId,
+        senderName: message.senderName,
+        text: message.text,
+      }, true).catch(() => null);
+      if (message.senderId === config.ownerQQ) void handleOwnerApproval(message);
       scheduleGroup(message.groupId, config.evaluation.debounceMs);
       void state.save();
       return;
@@ -120,6 +169,31 @@ connection = new OneBotConnection({
     }
   },
 });
+
+async function handleOwnerApproval(message) {
+  const segments = Array.isArray(message.raw?.message) ? message.raw.message : [];
+  const atBot = segments.some(
+    (part) => part?.type === "at" && String(part?.data?.qq || "") === config.botQQ,
+  );
+  if (!atBot) return;
+  const text = String(message.text || "").trim();
+  const approved = /同意|可以|批准|允许|去吧|开吧|行/.test(text);
+  const denied = /不同意|不可以|拒绝|不要|算了|别去/.test(text);
+  if (!approved && !denied) return;
+  const scope = `group:${message.groupId}`;
+  const context = await brain.context(scope).catch(() => null);
+  const pending = context?.approvals?.[0];
+  if (!pending) return;
+  const result = await brain.decideApproval(pending.id, approved).catch(() => null);
+  if (result) {
+    await brain.observe(scope, approved ? "tool_permission_approved" : "tool_permission_denied", {
+      approvalId: pending.id,
+      action: pending.action,
+      ownerMessage: text,
+    }, approved).catch(() => null);
+    log(`tool approval ${pending.id.slice(0, 8)} ${approved ? "approved" : "denied"} by owner`);
+  }
+}
 
 connection.connect();
 setInterval(() => {

@@ -13,6 +13,7 @@
 - 主动社交服务：群聊观察、人格状态、长期记忆、行动理由、冷却和主动艾特
 - 旧版 60 秒接话窗口：真实 @ 后的连续对话、8 秒延迟自然插话，纯表情不触发回复
 - 旧 AstrBot 人格卡、122 条 LivingMemory 和 108 个成员身份已迁移到本地私有记忆
+- Unified Brain：统一目标、关注点、长期事实、工具结果、复盘、技能和审批
 - B站观看/评论与设备控制 Skills
 
 ## 结构
@@ -32,6 +33,7 @@ QQ / NapCat            ├─ 浏览器
 ```powershell
 pnpm install
 pnpm dsh:patch
+pnpm brain:seed
 ./scripts/start-dsh-stack.ps1
 pnpm dsh:web
 pnpm dsh:worker
@@ -47,6 +49,7 @@ pnpm social:test
 - [迁移到 DSH](docs/migration-to-dsh.md)
 - [主动社交层](docs/active-social.md)
 - [人格与记忆迁移](docs/memory-migration.md)
+- [统一 Agent Brain](docs/agent-brain.md)
 
 ## 旧 AstrBot 命令
 

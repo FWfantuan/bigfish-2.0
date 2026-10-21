@@ -4,7 +4,7 @@ function formatMessages(messages) {
     .join("\n");
 }
 
-export function buildPrompt({ config, state, groupId }) {
+export function buildPrompt({ config, state, groupId, brainContext = null }) {
   const group = state.groups[groupId];
   const memories = [...(group?.memories || []), ...state.memories]
     .slice(-20)
@@ -13,6 +13,16 @@ export function buildPrompt({ config, state, groupId }) {
   const recentActions = state.actions
     .slice(-10)
     .map((item) => `- ${new Date(item.at).toISOString()} ${item.action} ${item.message || ""} 原因:${item.reason || ""}`)
+    .join("\n");
+  const brainGoals = (brainContext?.goals || [])
+    .map((item) => `- [${item.priority}] ${item.title}${item.detail ? `：${item.detail}` : ""}`)
+    .join("\n");
+  const brainFacts = (brainContext?.facts || []).map((item) => `- ${item.text}`).join("\n");
+  const brainSkills = (brainContext?.skills || [])
+    .map((item) => `- ${item.name}：${item.trigger}；${item.steps.join(" -> ")}`)
+    .join("\n");
+  const brainReflections = (brainContext?.reflections || [])
+    .map((item) => `- ${item.summary}`)
     .join("\n");
 
   return `你是${config.persona.name}，现在拥有持续运行的内在状态和主动行动能力。
@@ -31,6 +41,18 @@ ${config.persona.boundaries.map((item) => `- ${item}`).join("\n")}
 长期记忆：
 ${memories || "暂无"}
 
+中枢目标：
+${brainGoals || "暂无"}
+
+中枢长期事实：
+${brainFacts || "暂无"}
+
+已经形成的技能：
+${brainSkills || "暂无"}
+
+最近复盘：
+${brainReflections || "暂无"}
+
 最近自己的行动：
 ${recentActions || "暂无"}
 
@@ -41,9 +63,10 @@ ${formatMessages(group.messages.slice(-40))}
 
 只输出一个 JSON 对象，不要 Markdown 代码块，不要输出 JSON 以外的文字。格式：
 {
-  "action": "wait | group_message",
+  "action": "wait | group_message | request_tool",
   "target_group": "群号；group_message 时可选，留空表示当前群",
   "at_qq": "group_message 时必填；只可艾特当前上下文里出现过的群成员",
+  "tool_domain": "request_tool 时填写 bilibili | browser | computer | android | general",
   "message": "要发送的自然聊天文本；wait 时留空",
   "reason": "为什么现在行动或等待",
   "inner_state": {"mood": "当前心情", "focus": "当前关注", "desire": "此刻的愿望"},
@@ -57,7 +80,7 @@ ${formatMessages(group.messages.slice(-40))}
 - 不重复最近说过的话，不连续刷屏。
 - 禁止私聊、禁止用私聊替代群聊活动。
 - 主动聊天只能发到允许的群，并且必须艾特一个当前上下文里的群成员。
-- 想刷 B站、使用浏览器、电脑或手机时，绝对不能自行调用工具；只能在群里艾特主人询问是否允许。
+- 想刷 B站、使用浏览器、电脑或手机时，绝对不能自行调用工具；选择 request_tool，在群里艾特主人说明想做什么并请求许可。
 - 行动理由必须具体，禁止“为了活跃气氛”这类空泛理由。`;
 }
 

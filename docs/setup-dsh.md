@@ -1,9 +1,10 @@
 # DSH profile 配置
 
-大肥鱼使用两个 profile：
+大肥鱼使用三个 profile：
 
 - `bigfish017`：Web profile，承载 QQ Bridge 和 B站插件。
 - `bigfish-worker`：headless profile，承载主动社交、B站、浏览器、桌面和 Android 工具。
+- `bigfish-social`：无外部工具的社交推理 profile，只负责主动聊天和接话判断。
 
 固定 DSH 版本为 `0.1.7-rc.2`。最新版 DSH 与当前 QQ Bridge 客户端依赖不兼容。
 
@@ -40,6 +41,8 @@ dsh-plugin-bilibili 0.2.1
 ```text
 DEEPSEEK_API_KEY=...
 BIGFISH_ONEBOT_TOKEN=...
+BIGFISH_BRAIN_URL=http://127.0.0.1:15621
+BIGFISH_BRAIN_TOKEN=...
 BIGFISH_BOT_QQ=<机器人 QQ>
 BIGFISH_OWNER_QQ=<主人 QQ>
 BIGFISH_ALLOWED_GROUPS=<群号1>,<群号2>
