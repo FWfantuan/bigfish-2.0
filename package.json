@@ -1,0 +1,19 @@
+{
+  "name": "bigfish-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dsh:web": "dsh --profile bigfish017 --port 3180 --no-open",
+    "dsh:worker": "dsh --profile bigfish-worker",
+    "dsh:patch": "node scripts/apply-dsh-patches.mjs",
+    "social:start": "node services/sociald/main.mjs",
+    "social:test": "node --test services/sociald/test/*.test.mjs"
+  },
+  "dependencies": {
+    "@trycua/cua-driver": "0.37.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.1.7-rc.2"
+  }
+}

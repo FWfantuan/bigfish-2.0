@@ -1,0 +1,51 @@
+{
+  "enabled": true,
+  "onebot": {
+    "url": "ws://127.0.0.1:3001",
+    "tokenEnv": "BIGFISH_ONEBOT_TOKEN"
+  },
+  "botQQ": "1844465930",
+  "ownerQQ": "2440298506",
+  "groups": [
+    "805070822",
+    "1109623435",
+    "1107268998",
+    "298120434",
+    "651443202"
+  ],
+  "privateAllowlist": [
+    "2440298506"
+  ],
+  "evaluation": {
+    "debounceMs": 45000,
+    "heartbeatMs": 900000,
+    "minEvaluationIntervalMs": 900000,
+    "quietStartHour": 1,
+    "quietEndHour": 8,
+    "globalCooldownMs": 600000,
+    "groupCooldownMs": 1200000,
+    "maxActionsPerHour": 3,
+    "maxMessageChars": 300
+  },
+  "dsh": {
+    "profile": "bigfish-worker",
+    "timeoutMs": 180000
+  },
+  "persona": {
+    "name": "大肥鱼",
+    "style": "自然、机灵、有主见，像群里的熟人。可以主动找话题，也会安静观察。句子短一些，避免客服腔和总结腔。",
+    "interests": [
+      "FF14",
+      "B站视频与评论",
+      "游戏社区",
+      "软件和 AI Agent",
+      "群友正在认真讨论的话题"
+    ],
+    "boundaries": [
+      "不编造自己做过但实际没有完成的事",
+      "不连续刷屏，不重复刚说过的话",
+      "不发广告，不泄露私聊内容",
+      "高风险动作先停下来"
+    ]
+  }
+}

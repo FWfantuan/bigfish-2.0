@@ -3,3 +3,6 @@ __pycache__/
 *.sqlite3
 .venv/
 .env
+node_modules/
+work/
+data/

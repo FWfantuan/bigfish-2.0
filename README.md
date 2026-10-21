@@ -1,17 +1,49 @@
 # 大肥鱼 2.0
 
-大肥鱼 2.0 的 Agent 内核。项目目标是让机器人具备持续状态、长期记忆、目标、主动行动和可验证的工具调用能力。
+大肥鱼 2.0 使用 DeepSeek Harness（DSH）作为 Agent 主机，目标是具备持续状态、记忆、目标、主动发言和真实设备操作能力。AstrBot 在迁移期间保留现有 FF14、语音和 QQ 功能。
 
-最终运行主机定为 DeepSeek Harness（DSH）。AstrBot 和 NapCat 在迁移期间继续提供现有能力，新的大肥鱼功能优先实现为 DSH 插件或可被 DSH 调用的本地服务。
+当前 `dev` 分支已经包含：
 
-当前版本先提供安全的基础层：
+- DSH 0.1.7 的独立 Web profile 和 headless worker profile
+- NapCat / OneBot QQ Bridge，状态、审批和主动提醒
+- B站搜索、视频元数据、字幕、播放地址和抽帧
+- Playwright 浏览器，使用独立持久 Edge profile
+- Cua Driver 原生桌面控制，可枚举应用、观察窗口、点击、输入、滚动和拖拽
+- Android ADB 控制，支持设备发现、截图、UI 树、点击、输入、应用启动和日志
+- 主动社交服务：群聊观察、人格状态、长期记忆、行动理由、冷却和主动艾特
+- B站观看/评论与设备控制 Skills
 
-- SQLite 记忆和任务存储
-- `observe` 观察模式
-- 主人专用的状态、暂停、恢复、记忆和目标命令
-- 群消息观察和按群保存近期记忆
+## 结构
 
-## AstrBot 命令
+```text
+QQ / 定时触发
+      ↓
+主动社交服务 ─────→ DSH worker
+      ↓                 ├─ B站工具
+QQ / NapCat            ├─ 浏览器
+      ↑                 ├─ Windows 桌面
+      └─────────────────└─ Android
+```
+
+## 常用命令
+
+```powershell
+pnpm install
+pnpm dsh:patch
+pnpm dsh:web
+pnpm dsh:worker
+pnpm social:start
+pnpm social:test
+```
+
+模型密钥和 OneBot Token 保存在本机 `DSH_HOME/.env`，不进入 Git。
+
+## 文档
+
+- [迁移到 DSH](docs/migration-to-dsh.md)
+- [主动社交层](docs/active-social.md)
+
+## AstrBot 过渡命令
 
 ```text
 agent状态
@@ -24,9 +56,7 @@ agent任务
 agent完成 任务编号
 ```
 
-主动发言、浏览器控制、电脑控制和插件自我生成会在后续阶段加入。高风险动作会经过权限策略和人工确认。
-
-迁移路线见 [docs/migration-to-dsh.md](docs/migration-to-dsh.md)。
+后续的新能力优先实现为 DSH 工具、Skill 或本地能力服务。
 
 ## 开发约定
 

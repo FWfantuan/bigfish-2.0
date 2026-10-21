@@ -1,0 +1,35 @@
+# The live profile keeps this patch under DSH_HOME and references local
+# credentials through environment variables.
+- id: dsh-qq-bridge
+  config:
+    enabled: true
+    platform: napcat
+    napcat:
+      loginQq: !!js Number(process.env.BIGFISH_BOT_QQ || 0)
+      autoRestart: false
+      wsUrl: ws://127.0.0.1:3001
+      token: !!js process.env.BIGFISH_ONEBOT_TOKEN || ''
+    access:
+      adminQq: !!js Number(process.env.BIGFISH_OWNER_QQ || 0)
+      allowlist:
+        - !!js Number(process.env.BIGFISH_OWNER_QQ || 0)
+      commandPrefix: ""
+      mode: whitelist
+    agent:
+      preset: dsh-qq-bridge
+      provider: deepseek-official
+      model: deepseek-v4-flash
+      cwd: .
+      streamReasoning: false
+      maxMessageLength: 4500
+      ackMessage: 收到，我先看看。
+      qqReplyStyleSkill:
+        enabled: true
+        skillName: qq-session-reply-style
+    shell:
+      enabled: false
+    notifications:
+      agentReply:
+        enabled: true
+    selfLogInput:
+      enabled: false
