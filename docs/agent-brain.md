@@ -33,6 +33,8 @@ QQ 直聊 / replyd / sociald
 
 主人在白名单群真实艾特机器人表示同意后，approval 变成 `approved`。QQ Bridge 的群会话才能使用相应工具；执行完成后，工具结果写回 Brain 并自动复盘。
 
+普通事实搜索是例外：`sociald`、`replyd` 和私聊 Agent 可以直接调用 DeepSeek `web_search`，但配置为 `fetch: false`，不能打开网页或抓取全文。小说、漫画、长文阅读和视频播放仍必须经过工具审批。
+
 ## 启动
 
 ```powershell
