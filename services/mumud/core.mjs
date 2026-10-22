@@ -310,6 +310,7 @@ ${roguelikeMode
 - 静态界面（选择分队、招募、遗物、路线、商店和事件）由你观察后自己决定并操作。
 - 战斗中由你决定干员名、MAA 地图格子 location、方向 direction、技能和触发条件，然后调用 arknights_maa_action。不要让 android_interact 猜干员卡、部署格或朝向。
 - arknights_maa_action 使用 deployment_with_pause=false，由 MAA 负责识别干员、点击格子和朝向。PAUSE 状态下不能部署；如果当前是暂停画面，在同一个部署调用里传 resumeBeforeAction=true，让工具先恢复战斗再立即启动 MAA。需要继续观察时传 pauseAfterAction=true。一次只做一小批有把握的决策，工具返回后必须检查 postActionScreenshotPath，确认干员卡数量减少且干员真的落地。
+- 一旦本场战斗中任意一次 arknights_maa_action 成功返回了 stageName，就把这个 stageName 视为本场已确认的 MAA 地图；后续部署继续优先调用 arknights_maa_action，不要因为地图是肉鸽就自行退回屏幕坐标。只有 MAA 明确返回地图数据/坐标不可用，才改用 arknights_deploy_screen。
 - 肉鸽随机地图若无法确认 MAA stageName 或地图格子坐标，不要连续截图空等。看完当前暂停画面后，直接用 arknights_deploy_screen：从截图给出干员卡 normalized cardPoint、目标格 tilePoint 和 direction，当前是 PAUSE 就传 resumeBeforeAction=true，并传 pauseAfterAction=true。工具会在同一调用里恢复战斗、点击、选朝向、再次暂停并返回新截图。一次只部署一个干员，检查 postActionScreenshotPath 后再继续。
 - 同一张暂停画面最多连续观察两次。第二次查看后仍没有部署时，必须选择一次屏幕坐标部署、调用 arknights_ask_owner，或明确停止；禁止继续反复截图和计算不存在的地图 ID。
 - 需要等待费用或观察下一波时，通过 action 的 costs、cost_changes、kills、post_delay 等条件表达；不要依赖固定几秒。
