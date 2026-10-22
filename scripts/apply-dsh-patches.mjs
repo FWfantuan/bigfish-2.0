@@ -50,6 +50,9 @@ const qqSkills = resolve(dshHome, ".agent-presets/dsh-qq-bridge/skills");
 const browserPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/index.js`),
 );
+const browserClientPlugins = ["bigfish017", "bigfish-worker"].map((profile) =>
+  resolve(dshHome, `profiles/${profile}/node_modules/@yeesy369/dsh-browser-playwright/lib/client.js`),
+);
 const androidHostPlugins = ["bigfish017", "bigfish-worker", "bigfish-play"].map((profile) =>
   resolve(dshHome, `profiles/${profile}/node_modules/@zseven-w/dsh-android/lib/android-host.js`),
 );
@@ -1448,5 +1451,28 @@ for (const browserPlugin of browserPlugins) {
           "    const scope = settings.register(name, Config, {",
         ].join("\n"),
       ),
+  );
+}
+
+for (const browserClientPlugin of browserClientPlugins) {
+  await patch(
+    browserClientPlugin,
+    "BIGFISH_BROWSER_CLIENT_SETTINGS_SCOPE",
+    (source) => source
+      .replace(
+        'var inject = ["slots", "locale", "settingsScope"];',
+        'var inject = ["slots", "locale"]; // BIGFISH_BROWSER_CLIENT_SETTINGS_SCOPE',
+      )
+      .replace(
+        '  const form = createCardForm(ctx.settingsScope.bind({ namespace: "browser-playwright" }), FIELDS);',
+        [
+          '  // BIGFISH_BROWSER_CLIENT_SETTINGS_SCOPE: DSH 0.1.7 Web may not expose',
+          '  // settingsScope to client plugins; keep the Web app bootable and omit',
+          '  // the optional browser settings card in that host.',
+          '  if (typeof ctx.settingsScope !== "function") return;',
+          '  const form = createCardForm(ctx.settingsScope.bind({ namespace: "browser-playwright" }), FIELDS);',
+        ].join("\n"),
+      ),
+    { allowMissing: true },
   );
 }
