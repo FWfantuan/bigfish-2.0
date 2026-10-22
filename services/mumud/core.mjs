@@ -312,13 +312,13 @@ ${roguelikeMode
 - 战斗决策必须在 PAUSE 画面完成：第一次进入战斗先用 arknights_press_ui 暂停，再截图、计算费用/敌人/格子和部署计划；不要在战斗运行中思考。PAUSE 状态下不能部署；arknights_maa_action 使用 deployment_with_pause=false，由 MAA 负责识别干员、点击格子和朝向；调用时若当前是暂停画面传 resumeBeforeAction=true，动作完成后传 pauseAfterAction=true，让下一次规划仍处于暂停。一次只做一小批有把握的决策，工具返回后必须检查 postActionScreenshotPath，确认干员卡数量减少且干员真的落地。
 - 一旦本场战斗中任意一次 arknights_maa_action 成功返回了 stageName，就把这个 stageName 视为本场已确认的 MAA 地图；后续部署继续优先调用 arknights_maa_action，不要因为地图是肉鸽就自行退回屏幕坐标。只有 MAA 明确返回地图数据/坐标不可用，才改用 arknights_deploy_screen。
 - 肉鸽随机地图若无法确认 MAA stageName 或地图格子坐标，不要连续截图空等。看完当前暂停画面后，直接用 arknights_deploy_screen：从截图给出干员卡 normalized cardPoint、目标格 tilePoint 和 direction，当前是 PAUSE 就传 resumeBeforeAction=true，并传 pauseAfterAction=true。工具会在同一调用里恢复战斗、拖放、选朝向、再次暂停并返回新截图。一次只部署一个干员，检查 postActionScreenshotPath 后再继续。
-- 同一张暂停画面最多连续观察两次。第二次查看后仍没有部署时，必须选择一次屏幕坐标部署、调用 arknights_ask_owner，或明确停止；禁止继续反复截图和计算不存在的地图 ID。
+- 同一张暂停画面最多连续观察两次。第二次查看后仍没有部署时，必须选择一次屏幕坐标部署、调用 arknights_ask_owner，或明确停止；禁止继续反复截图和计算不存在的地图 ID。一次部署失败后最多重试一次；如果返回截图没有落地、画面没有恢复或出现“点击取消/悬空卡片”，立即暂停并调用 arknights_ask_owner，禁止连续用 android_interact 盲点、盲拖。
 - 需要等待费用或观察下一波时，通过 action 的 costs、cost_changes、kills、post_delay 等条件表达；不要依赖固定几秒。
 - 使用 arknights_maa_action 时禁止 SkillDaemon。技能什么时候开必须由你决定，用 Skill 或 SkillUsage action 表达。
 - 标准确认按钮、暂停键和倍速键优先使用 arknights_press_ui，不要凭缩放截图估计按钮中心。
 - 遇到开局分队、初始干员、招募谁、看不懂的遗物/收藏品、路线、事件选项，或两套战斗方案后果明显不同且你确实拿不准时，立即调用 arknights_ask_owner。说清当前选项、你的倾向和不确定原因；后台会暂停截图并等主人回答。不要先随便选完再汇报，也不要等到工具失败才问。
 - 正常过关、点确认、有明确最优解或你已经有足够把握时自己继续，不要把每个小步骤都拿去问主人。
-- 画面看不清、两个选择后果明显不同、连续两次工具操作没反应，或出现无法理解的新机制时，停止操作并在 QQ_SUMMARY 里直接问主人。
+- 画面看不清、两个选择后果明显不同、连续两次工具操作没反应，或出现无法理解的新机制时，停止操作并在 QQ_SUMMARY 里直接问主人。战斗部署、技能、撤退和暂停只允许使用 arknights_maa_action、arknights_deploy_screen、arknights_press_ui；android_interact 不能作为战斗部署的第三种尝试。每次暂停截图后应在一个短决策回合内行动，不要连续长时间分析旧截图。
 - 如果出现了你觉得有意思的场面，保持当前安全状态；后台观战会负责分享截图。
 - 招募、分队和遗物选择必须先执行希望账本：先看清 Hope、候选、队伍缺口和未来节点，再点击；禁止因为第一张看起来不错就把希望花光。
 - 每次招募后在行动记录中写入 offer、Hope 前后、功能标签（carry/enabler/patch/skip）、理由和下一节点计划，这些字段用于长期学习。

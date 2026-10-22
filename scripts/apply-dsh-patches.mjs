@@ -957,6 +957,50 @@ await patch(
 
 {
   const source = await readFile(qqPlugin, "utf8");
+  const marker = "// BIGFISH_OWNER_STOP_SHORTCUT";
+  if (!source.includes(marker)) {
+    let next = source.replace(
+      "import { readFile, readdir } from 'node:fs/promises';",
+      "import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';",
+    );
+    const routeAnchor = "    const routeWithHistory = async (evt) => {\n        await bigfishQqHistory.observe(evt);";
+    const routeReplacement = "    const routeWithHistory = async (evt) => {\n        if (await handleBigFishOwnerStopShortcut(evt, client, cfg)) return;\n        await bigfishQqHistory.observe(evt);";
+    next = next.replace(routeAnchor, routeReplacement);
+    const functionText = `
+${marker}
+async function handleBigFishOwnerStopShortcut(evt, client, cfg) {
+    if (evt?.message_type !== 'group') return false;
+    const groupId = String(evt.group_id || '');
+    const ownerQq = String(cfg.access?.adminQq || process.env.BIGFISH_OWNER_QQ || '');
+    if (!groupId || String(evt.user_id || '') !== ownerQq) return false;
+    const allowedGroups = new Set((Array.isArray(cfg.groups) ? cfg.groups : []).map(String));
+    if (allowedGroups.size && !allowedGroups.has(groupId)) return false;
+    const parts = Array.isArray(evt.message) ? evt.message : [];
+    const text = parts.filter((part) => part?.type === 'text').map((part) => String(part?.data?.text || '')).join(' ')
+        .replace(/\\s+/g, ' ').trim();
+    if (!/^(?:停一下|停下|别玩了|先别玩了|先别开游戏了|暂停游戏|停止游戏)(?:[！!。．.，,\\s]|$)/i.test(text)) return false;
+    const projectRoot = process.env.BIGFISH_PROJECT_ROOT || process.cwd();
+    const directory = resolve(projectRoot, 'data', 'mumud');
+    const stopPath = resolve(directory, 'stop.request.json');
+    const temporary = stopPath + '.shortcut.tmp';
+    await mkdir(directory, { recursive: true });
+    await writeFile(temporary, JSON.stringify({ version: 1, requestedAt: new Date().toISOString(), scope: 'global', groupId, requestedByOwner: true, reason: text }, null, 2) + '\\n', 'utf8');
+    await rename(temporary, stopPath);
+    await client.sendGroup(groupId, '好，先停了。', null);
+    return true;
+}
+`;
+    if (!next.includes("handleBigFishOwnerStopShortcut")) throw new Error(`owner stop shortcut target not found: ${qqPlugin}`);
+    next = next.trimEnd() + '\\n' + functionText;
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`patched owner stop shortcut: ${qqPlugin}`);
+  } else {
+    console.log(`already patched owner stop shortcut: ${qqPlugin}`);
+  }
+}
+
+{
+  const source = await readFile(qqPlugin, "utf8");
   const snippet = await readFile(qqMemeSnippet, "utf8");
   const registration = "    const unregisterBigFishMeme = registerBigFishMemeTool(ctx, client, cfg, officialMode);";
   const cleanup = "        unregisterBigFishMeme?.();";
