@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, truncate, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -55,6 +55,7 @@ const questionActivePath = resolve("data/mumud/question.active.json");
 const questionAnswerPath = resolve("data/mumud/question.answer.json");
 const dshScreenshotDirectory = resolve(homedir(), "AppData/Local/Temp/dsh-android/screenshots");
 const dshAttachmentDirectory = resolve(homedir(), ".dsh/attachments/v1/objects");
+const maaErrorLogPath = resolve(homedir(), "Desktop/maaend/remote-client/local-client-error.log");
 const state = await loadState(statePath);
 let liveGameplayState = await loadLiveGameplayState(liveStatePath);
 let liveSaveChain = Promise.resolve();
@@ -138,11 +139,25 @@ async function pruneDshAttachments(maxFiles = 200) {
   }
 }
 
+async function pruneMaaErrorLog(maxBytes = 100 * 1024 * 1024) {
+  try {
+    const size = (await stat(maaErrorLogPath)).size;
+    if (size > maxBytes) {
+      await truncate(maaErrorLogPath, 0);
+      log(`truncated MAA error log at ${Math.round(size / 1024 / 1024)}MB`);
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") log(`MAA log cleanup failed: ${error.message}`);
+  }
+}
+
 await pruneDshScreenshots();
 await pruneDshAttachments();
+await pruneMaaErrorLog();
 const screenshotCleanupTimer = setInterval(() => {
   void pruneDshScreenshots();
   void pruneDshAttachments();
+  void pruneMaaErrorLog();
 }, 60_000);
 screenshotCleanupTimer.unref();
 const runtimeStatus = {
