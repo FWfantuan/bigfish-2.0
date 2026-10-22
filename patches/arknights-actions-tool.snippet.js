@@ -171,7 +171,7 @@ export function createBigFishArknightsTools() {
       "Let the user's MAA Core execute one low-level Arknights battle action while BigFish decides "
       + "the operator, tile, direction, skill timing and conditions. Supports Deploy, Skill, Retreat, "
       + "SpeedUp, BulletTime, SkillUsage and SetUnitLocation. MAA profiles run with "
-      + "deployment_with_pause=false. Resume a paused battle before deploying, then verify placement "
+      + "deployment_with_pause=false. The caller must pause before planning; resume a paused battle before deploying, then pause again and verify placement "
       + "from a fresh screenshot. Use lane coordinates from MAA/map.ark-nights coordinates and the "
       + "current stage name. Do not ask MAA to choose strategy or use SkillDaemon.",
     parameters: {
