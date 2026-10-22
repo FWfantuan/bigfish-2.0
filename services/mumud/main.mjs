@@ -54,6 +54,7 @@ const questionRequestPath = resolve("data/mumud/question.request.json");
 const questionActivePath = resolve("data/mumud/question.active.json");
 const questionAnswerPath = resolve("data/mumud/question.answer.json");
 const dshScreenshotDirectory = resolve(homedir(), "AppData/Local/Temp/dsh-android/screenshots");
+const dshAttachmentDirectory = resolve(homedir(), ".dsh/attachments/v1/objects");
 const state = await loadState(statePath);
 let liveGameplayState = await loadLiveGameplayState(liveStatePath);
 let liveSaveChain = Promise.resolve();
@@ -119,8 +120,30 @@ async function pruneDshScreenshots(maxFiles = 80) {
   }
 }
 
+async function pruneDshAttachments(maxFiles = 200) {
+  try {
+    const files = [];
+    const walk = async (directory) => {
+      for (const name of await readdir(directory, { withFileTypes: true })) {
+        const path = resolve(directory, name.name);
+        if (name.isDirectory()) await walk(path);
+        else files.push({ path, mtime: (await stat(path)).mtimeMs });
+      }
+    };
+    await walk(dshAttachmentDirectory);
+    files.sort((a, b) => b.mtime - a.mtime);
+    await Promise.all(files.slice(maxFiles).map((item) => unlink(item.path).catch(() => null)));
+  } catch (error) {
+    if (error?.code !== "ENOENT") log(`attachment cache cleanup failed: ${error.message}`);
+  }
+}
+
 await pruneDshScreenshots();
-const screenshotCleanupTimer = setInterval(() => { void pruneDshScreenshots(); }, 5 * 60_000);
+await pruneDshAttachments();
+const screenshotCleanupTimer = setInterval(() => {
+  void pruneDshScreenshots();
+  void pruneDshAttachments();
+}, 60_000);
 screenshotCleanupTimer.unref();
 const runtimeStatus = {
   version: 1,
