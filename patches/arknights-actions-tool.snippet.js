@@ -137,13 +137,13 @@ async function adbTap(serial, point) {
   );
 }
 
-async function adbSwipe(serial, from, to) {
+async function adbSwipe(serial, from, to, durationMs = 220) {
   const adb = process.env.ADB || "adb";
   await execFileAsync(
     adb,
     [
       "-s", serial, "shell", "input", "swipe",
-      String(from.x), String(from.y), String(to.x), String(to.y), "220",
+      String(from.x), String(from.y), String(to.x), String(to.y), String(durationMs),
     ],
     {
       windowsHide: true,
@@ -452,12 +452,13 @@ export function createBigFishArknightsTools() {
         await adbTap(serial, pausePoint);
         await new Promise((resolveDelay) => setTimeout(resolveDelay, 300));
       }
-      await adbTap(serial, gesture.card);
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
-      await adbTap(serial, gesture.tile);
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 180));
+      // Match MAA's touch sequence: hold the operator card and drag it to the
+      // target tile. Tap-then-tap often leaves the card selected without
+      // committing placement on random roguelike maps.
+      await adbSwipe(serial, gesture.card, gesture.tile, 520);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 260));
       if (gesture.direction !== "None") {
-        await adbSwipe(serial, gesture.tile, gesture.end);
+        await adbSwipe(serial, gesture.tile, gesture.end, 280);
       }
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 800));
       if (pauseAfterAction) {
