@@ -28,6 +28,7 @@ const qqRouter = resolve(
   "profiles/bigfish017/node_modules/@yachangchang/dsh-qq-bridge/dist/router.js",
 );
 const qqFramesSnippet = resolve("patches/qq-frames-tool.snippet.js");
+const qqMemeSnippet = resolve("patches/qq-meme-tool.snippet.js");
 const qqGameplayAnswerSnippet = resolve("patches/qq-gameplay-answer-tool.snippet.js");
 const qqGameRequestSnippet = resolve("patches/qq-game-request-tool.snippet.js");
 const qqRecentHistorySnippet = resolve("patches/qq-recent-history.snippet.js");
@@ -956,7 +957,44 @@ await patch(
 
 {
   const source = await readFile(qqPlugin, "utf8");
+  const snippet = await readFile(qqMemeSnippet, "utf8");
+  const registration = "    const unregisterBigFishMeme = registerBigFishMemeTool(ctx, client, cfg, officialMode);";
+  const cleanup = "        unregisterBigFishMeme?.();";
+  let next = source
+    .split(`${registration}\n${registration}`).join(registration)
+    .split(`${cleanup}\n${cleanup}`).join(cleanup);
+  if (!source.includes("bigfish_send_meme")) {
+    next = next
+      .replace(
+        "import { readFile } from 'node:fs/promises';",
+        "import { readFile, readdir } from 'node:fs/promises';",
+      )
+      .replace(
+        "    const unregisterBigFishScreenshot = registerBigFishScreenshotTool(ctx, client, cfg, officialMode);",
+        registration + "\n    const unregisterBigFishScreenshot = registerBigFishScreenshotTool(ctx, client, cfg, officialMode);",
+      )
+      .replace(
+        "        unregisterBigFishScreenshot?.();",
+        cleanup + "\n        unregisterBigFishScreenshot?.();",
+      );
+    if (!next.includes("registerBigFishMemeTool")) throw new Error(`meme tool registration target not found: ${qqPlugin}`);
+  }
+  const markerIndex = next.indexOf("// BIGFISH_QQ_MEME_TOOL");
+  next = markerIndex >= 0
+    ? `${next.slice(0, markerIndex)}${snippet.trimEnd()}\n`
+    : `${next.trimEnd()}\n\n${snippet.trimEnd()}\n`;
+  if (next !== source) {
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`patched QQ meme tool: ${qqPlugin}`);
+  } else {
+    console.log(`already patched QQ meme tool: ${qqPlugin}`);
+  }
+}
+
+{
+  const source = await readFile(qqPlugin, "utf8");
   const snippet = await readFile(qqScreenshotSnippet, "utf8");
+  const memeSnippet = await readFile(qqMemeSnippet, "utf8");
   const frameRegistration = "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);";
   const screenshotRegistration = "    const unregisterBigFishScreenshot = registerBigFishScreenshotTool(ctx, client, cfg, officialMode);";
   const frameCleanup = "        unregisterBigFishFrames?.();";
@@ -971,8 +1009,8 @@ await patch(
   const marker = "// BIGFISH_QQ_SHARE_SCREENSHOT_TOOL";
   const markerIndex = next.indexOf(marker);
   next = markerIndex >= 0
-    ? `${next.slice(0, markerIndex)}${snippet.trimEnd()}\n`
-    : `${next.trimEnd()}\n\n${snippet.trimEnd()}\n`;
+    ? `${next.slice(0, markerIndex)}${snippet.trimEnd()}\n\n${memeSnippet.trimEnd()}\n`
+    : `${next.trimEnd()}\n\n${snippet.trimEnd()}\n\n${memeSnippet.trimEnd()}\n`;
   if (next !== source) {
     await writeFile(qqPlugin, next, "utf8");
     console.log(`patched screenshot sharing: ${qqPlugin}`);

@@ -12,10 +12,11 @@
 | 明日方舟普通战斗与肉鸽 | `services/mumud`、MAA Copilot | 已迁移并持续实测 | — |
 | FF14 鱼窗、PVP、主线、Wiki、乐谱、官方图片 | 旧 `astrbot_plugin_ff14_companion` | 待迁移 | 第一批，只读 |
 | FFLogs、房屋、市场、幻化 | 旧 FF14/Tataru/FFLogs 插件 | 待迁移 | 第二批，只读 |
-| MaaEnd 设备、登录、任务控制 | 旧 `astrbot_plugin_bigfish_maaend` | 待迁移 | 第三批，先查询后执行 |
+| MaaEnd 设备、登录、任务控制 | 旧 `astrbot_plugin_bigfish_maaend` | 暂不迁移 | 用户要求暂缓 |
 | 终末地查询与账号能力 | 旧 `astrbot_plugin_endfield` | 待迁移 | 第四批，先只读 |
-| 梗图、表情包、语音 | 旧 meme/nailong/voice 相关插件 | 待迁移 | 第五批 |
+| 梗图、表情包、奶龙 | 旧 meme/nailong 相关插件 | 第一批进行中 | 先接 QQ 图片发送和本地随机选择 |
+| 语音 | 旧 voice 相关插件 | 待迁移 | 后续 |
 
 迁移规则：每一批独立提交；先接入 DSH Skill 和只读工具；工具结果必须有真实返回才播报成功；旧入口保留回退点；未完成的能力不在提示词里假装已经支持。
 
-第一批从 FF14 公开只读查询开始，先迁鱼窗和 PVP 轮换，再迁主线/Wiki/乐谱/官方图片。完成后再接需要账号或外部写入的能力。
+第一批优先迁聊天表现层：`bigfish_send_meme` 已接入，支持从迁移的本地素材随机发送奶龙和普通表情包；随后再把 FF14 公开只读查询接入。完成后再接需要账号或外部写入的能力。
