@@ -1077,6 +1077,21 @@ await patch(
   { allowMissing: true },
 );
 
+await patch(
+  qqSecurity,
+  "BIGFISH_OWNER_GROUP_CONTINUATION",
+  (source) => source.replace(
+    "            const nailongWake = /^(?:龙来|来只奶龙|发射奶龙)[!！。.]?$/.test(plainText);\n            if (!addressed && !nailongWake)",
+    [
+      "            const nailongWake = /^(?:龙来|来只奶龙|发射奶龙)[!！。.]?$/.test(plainText);",
+      "            const ownerContinuation = groupAllowlist.length > 0",
+      "                && String(evt.user_id) === String(adminId);",
+      "            if (!addressed && !nailongWake && !ownerContinuation)",
+    ].join("\n"),
+  ),
+  { allowMissing: true },
+);
+
 {
   const source = await readFile(qqPlugin, "utf8");
   const marker = "// BIGFISH_NAILONG_SHORTCUT";

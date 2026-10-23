@@ -14,6 +14,10 @@ whenToUse: Use when a QQ request asks for an image, meme, Nailong, screen or vid
   `bigfish_send_meme` with `kind=meme`.
 - Send only the image unless the user also asks for a caption. Do not embed a
   canned phrase into every meme send.
+- An explicit request is not required when a playful beat, affectionate teasing,
+  or a direct joke clearly benefits from a visual reaction. Use this sparingly:
+  normally at most one context-driven meme in several minutes, never in factual
+  answers, repeated follow-ups, or an ongoing serious conversation.
 - QQ user images are saved locally by the bridge. Inspect the real image before
   commenting; never infer its contents from an image placeholder.
 
