@@ -8,7 +8,10 @@ import {
   bigFishNormalizeTokenUsage,
   bigFishReadDeepSeekBalance,
 } from "../../../patches/qq-deepseek-usage-tool.snippet.js";
-import { bigFishResolveDeepSeekTipQr } from "../../../patches/qq-deepseek-tip-tool.snippet.js";
+import {
+  bigFishCreateDeepSeekPaymentQr,
+  bigFishResolveDeepSeekTipQr,
+} from "../../../patches/qq-deepseek-tip-tool.snippet.js";
 
 test("DeepSeek balance response is normalized without exposing the API key", async () => {
   const result = await bigFishReadDeepSeekBalance({
@@ -85,4 +88,10 @@ test("support QR is resolved only from the private support directory", async () 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("dynamic DeepSeek payment only accepts supported preset amounts", async () => {
+  const result = await bigFishCreateDeepSeekPaymentQr({ amount: 11 });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /只允许/);
 });
