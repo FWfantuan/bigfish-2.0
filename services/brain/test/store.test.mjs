@@ -143,6 +143,51 @@ test("global memories are available to every scope without copying private goals
   assert.equal(context.self.focus, "长期学习");
 });
 
+test("personality traits change only after repeated cross-group evidence", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "bigfish-brain-"));
+  const store = new BrainStore(join(dir, "brain.sqlite3"));
+  t.after(async () => {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  const initial = store.personalityTraits().humor;
+  assert.deepEqual(
+    store.considerPersonalitySignals("group:a", [{
+      trait: "humor",
+      direction: "increase",
+      evidence: "多个熟人连续用玩笑接话时，大肥鱼自然接梗得到积极反馈",
+    }]),
+    [],
+  );
+  assert.equal(store.personalityTraits().humor, initial);
+  store.considerPersonalitySignals("group:a", [{
+    trait: "humor",
+    direction: "increase",
+    evidence: "同类轻松接梗再次得到积极反馈",
+  }]);
+  assert.equal(store.personalityTraits().humor, initial);
+  const changes = store.considerPersonalitySignals("group:b", [{
+    trait: "humor",
+    direction: "increase",
+    evidence: "另一个群里的相似互动再次验证幽默表达有效",
+  }]);
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].next, Number((initial + 0.02).toFixed(2)));
+  assert.equal(store.context("group:c").self.traits.humor, changes[0].next);
+});
+
+test("ordinary self updates cannot overwrite evolved personality traits", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "bigfish-brain-"));
+  const store = new BrainStore(join(dir, "brain.sqlite3"));
+  t.after(async () => {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  store.setSelf("global", { traits: { humor: 1, caution: 0 } });
+  assert.equal(store.personalityTraits().humor, 0.68);
+  assert.equal(store.personalityTraits().caution, 0.72);
+});
+
 test("relationship context prioritizes people mentioned in the current message", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "bigfish-brain-"));
   const store = new BrainStore(join(dir, "brain.sqlite3"));

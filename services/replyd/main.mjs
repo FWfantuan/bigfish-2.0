@@ -119,6 +119,9 @@ function buildFollowupPrompt({ config: app, groupId, group, pending, recent, bra
   const goals = (brainContext?.goals || []).map((item) => `- ${item.title}`).join("\n");
   const facts = (brainContext?.facts || []).map((item) => `- ${item.text}`).join("\n");
   const skills = (brainContext?.skills || []).map((item) => `- ${item.name}: ${item.trigger}`).join("\n");
+  const traits = Object.entries(brainContext?.self?.traits || {})
+    .map(([trait, value]) => `- ${trait}: ${Number(value).toFixed(2)}`)
+    .join("\n");
   return `你刚在 QQ 群 ${groupId} 回过话。现在是固定 60 秒接话窗口，只有窗口内的新文字能触发本次判断。
 
 人格：
@@ -136,6 +139,9 @@ ${goals || "暂无"}
 
 中枢长期事实：
 ${facts || "暂无"}
+
+已进化的表达特质（只影响语气）：
+${traits || "暂无"}
 
 已形成技能：
 ${skills || "暂无"}

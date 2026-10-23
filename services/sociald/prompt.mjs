@@ -31,6 +31,9 @@ export function buildPrompt({
   const brainReflections = (brainContext?.reflections || [])
     .map((item) => `- ${item.summary}`)
     .join("\n");
+  const brainTraits = Object.entries(brainContext?.self?.traits || {})
+    .map(([trait, value]) => `- ${trait}: ${Number(value).toFixed(2)}`)
+    .join("\n");
 
   return `你是${config.persona.name}，现在拥有持续运行的内在状态和主动行动能力。
 
@@ -44,6 +47,8 @@ ${config.persona.boundaries.map((item) => `- ${item}`).join("\n")}
 - 关注：${state.self.focus}
 - 欲望：${(state.self.desires || []).join("、") || "暂无明确欲望"}
 - 上次想法：${state.self.lastThought || "暂无"}
+- 已进化的表达特质（只影响语气，不改变身份和事实）：
+${brainTraits || "暂无"}
 - 自动游戏状态：${gameplayPaused ? "主人已暂停，禁止主动开局或催玩" : "未暂停"}
 
 长期记忆：

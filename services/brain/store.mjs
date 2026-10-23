@@ -7,6 +7,26 @@ function now() {
   return new Date().toISOString();
 }
 
+export const DEFAULT_PERSONALITY_TRAITS = Object.freeze({
+  warmth: 0.72,
+  humor: 0.68,
+  teasing: 0.58,
+  initiative: 0.56,
+  curiosity: 0.76,
+  directness: 0.66,
+  caution: 0.72,
+});
+
+const PERSONALITY_TRAIT_LIMITS = Object.freeze({
+  warmth: [0.2, 0.9],
+  humor: [0.2, 0.9],
+  teasing: [0.1, 0.85],
+  initiative: [0.2, 0.85],
+  curiosity: [0.3, 0.95],
+  directness: [0.25, 0.9],
+  caution: [0.3, 0.95],
+});
+
 function json(value, fallback) {
   try {
     return value == null ? fallback : JSON.parse(value);
@@ -162,6 +182,18 @@ export class BrainStore {
         created_at TEXT NOT NULL, decided_at TEXT
       );
     `);
+    const selfColumns = this.db.prepare("PRAGMA table_info(self_state)").all().map((row) => row.name);
+    if (!selfColumns.includes("traits_json")) {
+      this.db.exec("ALTER TABLE self_state ADD COLUMN traits_json TEXT NOT NULL DEFAULT '{}'");
+    }
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS personality_signals (
+        id TEXT PRIMARY KEY, scope TEXT NOT NULL, trait TEXT NOT NULL, direction TEXT NOT NULL,
+        evidence TEXT NOT NULL DEFAULT '', applied_at TEXT, created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS personality_signals_trait_time
+      ON personality_signals(trait, direction, applied_at, created_at DESC);
+    `);
   }
 
   close() {
@@ -179,17 +211,93 @@ export class BrainStore {
         : previous.desires;
     const stamp = now();
     this.db.prepare(`
-      INSERT INTO self_state(scope,mood,focus,desires_json,updated_at) VALUES (?,?,?,?,?)
+      INSERT INTO self_state(scope,mood,focus,desires_json,traits_json,updated_at) VALUES (?,?,?,?,?,?)
       ON CONFLICT(scope) DO UPDATE SET mood=excluded.mood,focus=excluded.focus,
-      desires_json=excluded.desires_json,updated_at=excluded.updated_at
-    `).run(scope, mood, focus, JSON.stringify(desires), stamp);
+      desires_json=excluded.desires_json,traits_json=excluded.traits_json,updated_at=excluded.updated_at
+    `).run(scope, mood, focus, JSON.stringify(desires), JSON.stringify(previous.traits), stamp);
     return this.getSelf(scope);
   }
 
   getSelf(scope) {
     const row = this.db.prepare("SELECT * FROM self_state WHERE scope=?").get(scope);
-    if (!row) return { mood: "curious", focus: "", desires: [], updatedAt: null };
-    return { mood: row.mood, focus: row.focus, desires: json(row.desires_json, []), updatedAt: row.updated_at };
+    if (!row) {
+      return {
+        mood: "curious",
+        focus: "",
+        desires: [],
+        traits: { ...DEFAULT_PERSONALITY_TRAITS },
+        updatedAt: null,
+      };
+    }
+    return {
+      mood: row.mood,
+      focus: row.focus,
+      desires: json(row.desires_json, []),
+      traits: { ...DEFAULT_PERSONALITY_TRAITS, ...json(row.traits_json, {}) },
+      updatedAt: row.updated_at,
+    };
+  }
+
+  personalityTraits() {
+    return { ...this.getSelf("global").traits };
+  }
+
+  considerPersonalitySignals(scope, updates = []) {
+    if (!Array.isArray(updates) || updates.length === 0) return [];
+    const stamp = now();
+    const accepted = [];
+    for (const update of updates.slice(0, 4)) {
+      const trait = String(update?.trait || "").trim().toLowerCase();
+      if (!PERSONALITY_TRAIT_LIMITS[trait]) continue;
+      const direction = String(update?.direction || "").trim().toLowerCase();
+      if (!["increase", "decrease"].includes(direction)) continue;
+      const evidence = String(update?.evidence || "").trim().slice(0, 1200);
+      if (!evidence) continue;
+      this.db.prepare(`
+        INSERT INTO personality_signals(id,scope,trait,direction,evidence,applied_at,created_at)
+        VALUES (?,?,?,?,?,NULL,?)
+      `).run(randomUUID(), scope, trait, direction, evidence, stamp);
+      accepted.push({ trait, direction, evidence });
+    }
+
+    const changes = [];
+    if (!this.db.prepare("SELECT 1 FROM self_state WHERE scope='global'").get()) {
+      this.setSelf("global", {});
+    }
+    for (const trait of Object.keys(PERSONALITY_TRAIT_LIMITS)) {
+      for (const direction of ["increase", "decrease"]) {
+        const signals = this.db.prepare(`
+          SELECT id,scope FROM personality_signals
+          WHERE trait=? AND direction=? AND applied_at IS NULL
+            AND created_at >= datetime('now', '-30 days')
+          ORDER BY created_at DESC LIMIT 8
+        `).all(trait, direction);
+        const scopes = new Set(signals.map((item) => item.scope));
+        if (signals.length < 3 || (scopes.size < 2 && signals.length < 5)) continue;
+        const current = this.personalityTraits();
+        const [minimum, maximum] = PERSONALITY_TRAIT_LIMITS[trait];
+        const delta = direction === "increase" ? 0.02 : -0.02;
+        const next = Number(
+          Math.min(maximum, Math.max(minimum, current[trait] + delta)).toFixed(2),
+        );
+        if (next === current[trait]) continue;
+        const stampApplied = now();
+        this.db.exec("BEGIN");
+        try {
+          this.db.prepare(`
+            UPDATE self_state SET traits_json=?,updated_at=? WHERE scope='global'
+          `).run(JSON.stringify({ ...current, [trait]: next }), stampApplied);
+          const mark = this.db.prepare("UPDATE personality_signals SET applied_at=? WHERE id=?");
+          for (const signal of signals) mark.run(stampApplied, signal.id);
+          this.db.exec("COMMIT");
+        } catch (error) {
+          this.db.exec("ROLLBACK");
+          throw error;
+        }
+        changes.push({ trait, direction, previous: current[trait], next });
+      }
+    }
+    return changes;
   }
 
   addEvent(scope, kind, content, success = true) {
@@ -543,9 +651,12 @@ export class BrainStore {
     const skills = [...localSkills, ...globalSkills]
       .filter((item, index, all) => all.findIndex((candidate) => candidate.skill_key === item.skill_key) === index)
       .slice(0, 20);
+    const effectiveSelf = scope === "global" || localSelf.updatedAt
+      ? { ...globalSelf, ...localSelf }
+      : globalSelf;
     return {
       scope,
-      self: scope === "global" || localSelf.updatedAt ? { ...globalSelf, ...localSelf } : globalSelf,
+      self: { ...effectiveSelf, traits: scope === "global" ? localSelf.traits : globalSelf.traits },
       goals: this.goals(scope),
       facts,
       relations,

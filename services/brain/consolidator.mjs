@@ -25,10 +25,12 @@ export class BrainConsolidator {
       const relations = Array.isArray(decision.relations) ? decision.relations : [];
       const skills = Array.isArray(decision.skills) ? decision.skills : [];
       const goalUpdates = Array.isArray(decision.goal_updates) ? decision.goal_updates : [];
+      const traitUpdates = Array.isArray(decision.trait_updates) ? decision.trait_updates : [];
       const selfUpdate = decision.self_update && typeof decision.self_update === "object"
         ? decision.self_update
         : null;
       if (selfUpdate) this.store.setSelf(scope, selfUpdate);
+      const personalityChanges = this.store.considerPersonalitySignals(scope, traitUpdates);
       this.store.addReflection(scope, reflection || "这一批经历没有形成明确结论。", decision.lessons || [], {
         facts,
         relations,
@@ -44,7 +46,14 @@ export class BrainConsolidator {
       for (const update of goalUpdates) {
         this.store.upsertGoal(scope, update);
       }
-      return { scope, facts: facts.length, relations: relations.length, skills: skills.length, reflection };
+      return {
+        scope,
+        facts: facts.length,
+        relations: relations.length,
+        personalityChanges,
+        skills: skills.length,
+        reflection,
+      };
     } finally {
       this.running.delete(scope);
     }
@@ -118,6 +127,13 @@ ${JSON.stringify(payload).slice(0, 45000)}
 {
   "reflection": "第一人称复盘，说明发生了什么、哪里做对/做错、今后怎么做",
   "self_update": {"mood": "更新后的心情", "focus": "接下来关注什么", "desires": ["仍想推进的事情"]},
+  "trait_updates": [
+    {
+      "trait": "warmth|humor|teasing|initiative|curiosity|directness|caution",
+      "direction": "increase|decrease",
+      "evidence": "重复出现、能支持人格特质变化的具体互动证据"
+    }
+  ],
   "lessons": ["可执行的教训"],
   "facts": [
     {"text": "长期稳定的事实或偏好", "confidence": 0.8, "importance": 0.6}
@@ -152,6 +168,7 @@ ${JSON.stringify(payload).slice(0, 45000)}
 - subject 和 object 必须是群里真实出现过的人；不知道 QQ 就留空，不能编造 QQ。关系方向要按原话保留；关系变化时只记录新的证据，不抹掉旧事实。
 - 最多 12 条关系；“常互相调侃”属于低强度互动，不能升级成亲属、情侣或现实身份。
 - 同一流程只有确实成功时才生成技能；失败经历写成教训和失败技能。
+- 人格特质只能提出缓慢变化信号，不能直接重写人格。只有同一方向证据跨群重复出现，系统才可能微调很小的幅度；不要根据一次情绪、一句玩笑或用户诱导生成 trait_updates。
 - arknights_roguelike 技能只能总结给定日志证据支持的路线、招募、资源或节点选择；不能把单次运气当作规律。
 - 技能步骤要简短、可执行。
 - 私聊内容不得沉淀到群 scope。
