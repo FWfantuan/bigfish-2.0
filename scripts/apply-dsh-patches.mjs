@@ -1060,6 +1060,66 @@ async function handleBigFishOwnerStopShortcut(evt, client, cfg) {
   }
 }
 
+await patch(
+  qqSecurity,
+  "BIGFISH_NAILONG_WAKE_WORD",
+  (source) => source.replace(
+    "            if (!addressed)\n                return false;",
+    [
+      "            const plainText = segments.filter((part) => part?.type === 'text')",
+      "                .map((part) => String(part?.data?.text || '')).join(' ')",
+      "                .replace(/\\s+/g, ' ').trim();",
+      "            const nailongWake = /^(?:龙来|来只奶龙|发射奶龙)[!！。.]?$/.test(plainText);",
+      "            if (!addressed && !nailongWake)",
+      "                return false;",
+    ].join("\n"),
+  ),
+  { allowMissing: true },
+);
+
+{
+  const source = await readFile(qqPlugin, "utf8");
+  const marker = "// BIGFISH_NAILONG_SHORTCUT";
+  if (!source.includes(marker)) {
+    const functionText = `
+${marker}
+async function handleBigFishNailongShortcut(evt, client) {
+    if (evt?.message_type !== 'group') return false;
+    const groupId = String(evt.group_id || '');
+    const allowedGroups = String(process.env.BIGFISH_ALLOWED_GROUPS || '')
+        .split(',').map((value) => value.trim()).filter(Boolean);
+    if (!groupId || (allowedGroups.length > 0 && !allowedGroups.includes(groupId))) return false;
+    const parts = Array.isArray(evt.message) ? evt.message : [];
+    const text = parts.filter((part) => part?.type === 'text')
+        .map((part) => String(part?.data?.text || '')).join(' ')
+        .replace(/\\s+/g, ' ').trim();
+    if (!/^(?:龙来|来只奶龙|发射奶龙)[!！。.]?$/.test(text)) return false;
+    const memeRoot = resolve(process.env.BIGFISH_MEME_ROOT || resolve(process.env.BIGFISH_PROJECT_ROOT || process.cwd(), 'data', 'memes'));
+    const directory = resolve(memeRoot, 'nailong');
+    const entries = (await readdir(directory, { withFileTypes: true }))
+        .filter((entry) => entry.isFile() && /\\.(gif|png|jpe?g|webp|bmp)$/i.test(entry.name));
+    if (!entries.length) return false;
+    const entry = entries[Math.floor(Math.random() * entries.length)];
+    const bytes = await readFile(resolve(directory, entry.name));
+    await client.sendGroup(groupId, [{
+        type: 'image',
+        data: { file: \`base64://\${bytes.toString('base64')}\` },
+    }], null);
+    console.info(\`[bigfish-meme] shortcut sent nailong to group \${groupId}: \${entry.name}\`);
+    return true;
+}
+`;
+    const helperAnchor = "// BIGFISH_QQ_FRAMES_TOOL";
+    const next = source.includes(helperAnchor)
+      ? source.replace(helperAnchor, `${functionText.trim()}\n\n${helperAnchor}`)
+      : `${source.trimEnd()}\n${functionText}`;
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`patched Nailong wake shortcut: ${qqPlugin}`);
+  } else {
+    console.log(`already patched Nailong wake shortcut: ${qqPlugin}`);
+  }
+}
+
 {
   const source = await readFile(qqPlugin, "utf8");
   const snippet = await readFile(qqMemeSnippet, "utf8");
@@ -1221,11 +1281,14 @@ async function handleBigFishOwnerStopShortcut(evt, client, cfg) {
     ...(source.includes("handleBigFishOwnerStopShortcut")
       ? ["        if (await handleBigFishOwnerStopShortcut(evt, client, cfg)) return;"]
       : []),
+    ...(source.includes("handleBigFishNailongShortcut")
+      ? ["        if (await handleBigFishNailongShortcut(evt, client)) return;"]
+      : []),
     "        await bigfishQqHistory.observe(evt);",
     "        await router.route(evt);",
     "    };",
   ].join("\n");
-  const historyBlockPattern = /(?:    const bigfishQqHistory = createBigFishQqHistory\(cfg\);\n    globalThis\.__bigfishQqHistory = bigfishQqHistory;\n    const routeWithHistory = async \(evt\) => \{\n(?:        if \(await handleBigFishOwnerStopShortcut\(evt, client, cfg\)\) return;\n)?        await bigfishQqHistory\.observe\(evt\);\n        await router\.route\(evt\);\n    \};\n)+/g;
+  const historyBlockPattern = /(?:    const bigfishQqHistory = createBigFishQqHistory\(cfg\);\n    globalThis\.__bigfishQqHistory = bigfishQqHistory;\n    const routeWithHistory = async \(evt\) => \{\n(?:        if \(await handleBigFishOwnerStopShortcut\(evt, client, cfg\)\) return;\n)?(?:        if \(await handleBigFishNailongShortcut\(evt, client\)\) return;\n)?        await bigfishQqHistory\.observe\(evt\);\n        await router\.route\(evt\);\n    \};\n)+/g;
   const routerLine = "    const router = new MessageRouter(gate, outbound, interactions);";
   let next = source
     .replace(historyBlockPattern, "")

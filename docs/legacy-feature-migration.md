@@ -15,7 +15,7 @@
 | FFLogs、房屋、市场、幻化 | 旧 FF14/Tataru/FFLogs 插件 | 待迁移 | 第二批，只读 |
 | MaaEnd 设备、登录、任务控制 | 旧 `astrbot_plugin_bigfish_maaend` | 暂不迁移 | 用户要求暂缓 |
 | 终末地查询与账号能力 | 旧 `astrbot_plugin_endfield` | 待迁移 | 第四批，先只读 |
-| 梗图、表情包、奶龙 | QQ Bridge `bigfish_send_meme`、本地素材库 | 已迁移 | 支持“龙来/发射奶龙”和普通表情包 |
+| 梗图、表情包、奶龙 | QQ Bridge `bigfish_send_meme`、确定性“龙来”快捷发送、本地素材库 | 已迁移 | 支持免艾特“龙来/来只奶龙/发射奶龙”和普通表情包 |
 | 语音 | 旧 voice 相关插件 | 待迁移 | 后续 |
 
 迁移规则：每一批独立提交；先接入 DSH Skill 和只读工具；工具结果必须有真实返回才播报成功；旧入口保留回退点；未完成的能力不在提示词里假装已经支持。

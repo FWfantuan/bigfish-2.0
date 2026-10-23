@@ -46,7 +46,6 @@ function scheduleGroup(groupId, delay) {
 async function evaluateGroup(groupId) {
   if (!config.enabled || stopping || evaluating.has(groupId)) return;
   const group = state.group(groupId);
-  if (!group.messages.length) return;
   const now = Date.now();
   if (now < (group.nextCheckAt || 0)) {
     scheduleGroup(groupId, group.nextCheckAt - now);
@@ -56,15 +55,20 @@ async function evaluateGroup(groupId) {
   try {
     group.lastEvaluatedAt = now;
     const ambientMessages = proactiveMessages(group.messages, config.botQQ);
-    if (ambientMessages.length === 0) {
+    const scope = `group:${groupId}`;
+    const brainContext = await brain.context(scope).catch(() => null);
+    if (ambientMessages.length === 0 && (brainContext?.relations || []).length === 0) {
       group.nextCheckAt = Date.now() + config.evaluation.heartbeatMs;
       await state.save();
       log(`group=${groupId} skipped proactive evaluation: direct chat owns the recent messages`);
       return;
     }
     const recentSenderIds = new Set(ambientMessages.slice(-40).map((item) => item.senderId));
-    const scope = `group:${groupId}`;
-    const brainContext = await brain.context(scope).catch(() => null);
+    const knownMemberIds = new Set();
+    for (const relation of brainContext?.relations || []) {
+      if (relation.subjectQq) knownMemberIds.add(String(relation.subjectQq));
+      if (relation.objectQq) knownMemberIds.add(String(relation.objectQq));
+    }
     const gameplayPaused = await isGameplayPaused();
     const prompt = buildPrompt({
       config,
@@ -89,6 +93,7 @@ async function evaluateGroup(groupId) {
       groupId,
       state: state.value,
       recentSenderIds,
+      knownMemberIds,
       gameplayPaused,
     });
     if (!verdict.ok) {

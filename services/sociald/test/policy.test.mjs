@@ -54,6 +54,25 @@ test("group action is allowed with a recent mention target", () => {
   assert.equal(verdict.ok, true);
 });
 
+test("proactive initiative may mention a known member from the relationship graph", () => {
+  const decision = normalizeDecision({
+    action: "group_message",
+    target_group: "100",
+    at_qq: "9",
+    message: "你上次说的那个二次元企划，我正好也看到新消息了，想聊吗？",
+    reason: "关系图谱表明对方长期喜欢二次元，和我的兴趣重合",
+  });
+  const verdict = validateDecision(decision, {
+    config,
+    groupId: "100",
+    state: baseState(),
+    recentSenderIds: new Set(),
+    knownMemberIds: new Set(["9"]),
+    now: new Date(2026, 0, 1, 12, 0),
+  });
+  assert.equal(verdict.ok, true);
+});
+
 test("proactive private messages are always blocked", () => {
   const decision = normalizeDecision({
     action: "private_message",

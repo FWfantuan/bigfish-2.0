@@ -22,6 +22,13 @@ test("proactive social prompt includes slowly evolved expression traits", () => 
     groupId: "1",
     brainContext: {
       self: { traits: { humor: 0.7, caution: 0.72 } },
+      relations: [{
+        subjectQq: "9",
+        subjectName: "阿宅",
+        objectName: "大肥鱼",
+        relation: "常聊二次元和动画",
+        evidence: "最近多次一起聊新番",
+      }],
       goals: [],
       facts: [],
       skills: [],
@@ -31,6 +38,8 @@ test("proactive social prompt includes slowly evolved expression traits", () => 
   assert.match(prompt, /humor: 0\.70/);
   assert.match(prompt, /caution: 0\.72/);
   assert.match(prompt, /只影响语气/);
+  assert.match(prompt, /阿宅\(9\) -> 常聊二次元和动画/);
+  assert.match(prompt, /主动发起一个自己想聊的话题/);
 });
 
 test("core persona stays compact and keeps the Nailong trigger explicit", async () => {

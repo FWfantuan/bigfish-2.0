@@ -48,6 +48,7 @@ export function validateDecision(decision, context) {
     groupId,
     state,
     recentSenderIds = new Set(),
+    knownMemberIds = new Set(),
     gameplayPaused = false,
   } = context;
   const evaluation = config.evaluation;
@@ -86,7 +87,11 @@ export function validateDecision(decision, context) {
     const target = decision.targetGroup || groupId;
     if (!config.groups.includes(target)) return { ok: false, reason: "group-not-allowed" };
     if (!decision.atQq) return { ok: false, reason: "mention-required" };
-    if (!recentSenderIds.has(decision.atQq) && decision.atQq !== config.ownerQQ) {
+    if (
+      !recentSenderIds.has(decision.atQq)
+      && !knownMemberIds.has(decision.atQq)
+      && decision.atQq !== config.ownerQQ
+    ) {
       return { ok: false, reason: "mention-not-in-context" };
     }
     if (decision.action === "request_tool" && decision.atQq !== config.ownerQQ) {
