@@ -158,6 +158,60 @@ export async function bigFishCreateDeepSeekPaymentQr(options = {}) {
     }
 }
 
+export async function bigFishWaitForDeepSeekLogin(options = {}) {
+    const [{ mkdir }, { resolve }] = await Promise.all([
+        import('node:fs/promises'),
+        import('node:path'),
+    ]);
+    const { chromium } = await import('playwright');
+    const root = resolve(options.root || process.env.BIGFISH_PROJECT_ROOT || process.cwd());
+    const profileDir = resolve(root, 'data', 'browser-profile-web');
+    const generatedDir = resolve(root, 'data', 'support', 'generated');
+    await mkdir(generatedDir, { recursive: true });
+    const screenshotPath = resolve(generatedDir, `deepseek-login-live-${Date.now()}.png`);
+    const context = await chromium.launchPersistentContext(profileDir, {
+        channel: options.channel || 'msedge',
+        headless: options.headless !== false,
+        viewport: { width: 1280, height: 900 },
+    });
+    try {
+        const page = context.pages()[0] ?? await context.newPage();
+        await page.goto(BIGFISH_DEEPSEEK_SIGNIN_URL, {
+            waitUntil: 'domcontentloaded',
+            timeout: options.timeoutMs || 30000,
+        });
+        await page.waitForTimeout(options.settleMs || 2200);
+        if (!page.url().includes('/sign_in')) {
+            return { ok: true, loggedIn: true, loginRequired: false, reason: 'already signed in' };
+        }
+        await page.screenshot({ path: screenshotPath, fullPage: true });
+        await options.onQrReady?.({ screenshotPath, url: page.url() });
+        const deadline = Date.now() + Number(options.waitMs || 180000);
+        while (Date.now() < deadline) {
+            await page.waitForTimeout(1500);
+            if (!page.url().includes('/sign_in')) {
+                await page.waitForTimeout(1500);
+                return {
+                    ok: true,
+                    loggedIn: true,
+                    loginRequired: false,
+                    screenshotPath,
+                    reason: 'signed in',
+                };
+            }
+        }
+        return {
+            ok: false,
+            loggedIn: false,
+            loginRequired: true,
+            screenshotPath,
+            reason: '等待扫码登录超时',
+        };
+    } finally {
+        await context.close();
+    }
+}
+
 async function bigFishScreenshotMessage(path) {
     const { readFile } = await import('node:fs/promises');
     const bytes = await readFile(path);
@@ -188,22 +242,32 @@ export function registerBigFishDeepSeekLoginTool(ctx, client, cfg) {
                 text: value.sent ? '已私聊发送 DeepSeek 登录码' : `未发送登录码：${value.reason}`,
             }],
         },
-        timeoutMs: 45000,
+        timeoutMs: 220000,
         isConcurrencySafe: () => false,
         async execute(_args, exec) {
             const sessionId = exec.agent?.session?.id;
             if (globalThis.__bigfishQqOwnerBySession?.get(sessionId) !== true) {
                 throw new Error('只有主人可以刷新 DeepSeek 登录码');
             }
-            const capture = await bigFishCaptureDeepSeekTopUp({ url: BIGFISH_DEEPSEEK_SIGNIN_URL });
+            const capture = await bigFishWaitForDeepSeekLogin({
+                waitMs: 180000,
+                async onQrReady({ screenshotPath }) {
+                    await client.sendPrivate(Number(cfg.access.adminQq), [
+                        await bigFishScreenshotMessage(screenshotPath),
+                        { type: 'text', data: { text: '\nDeepSeek 平台登录码，只用于主人扫码；浏览器会保持在线直到登录完成。' } },
+                    ]);
+                },
+            });
+            if (capture.loggedIn) {
+                if (!capture.loginRequired && capture.reason === 'already signed in') {
+                    return { sent: false, loginRequired: false, reason: 'DeepSeek 已登录，无需刷新登录码' };
+                }
+                return { sent: true, loginRequired: false, reason: 'DeepSeek 登录成功，会话已保存' };
+            }
             if (!capture.loginRequired) {
                 return { sent: false, loginRequired: false, reason: 'DeepSeek 已登录，无需刷新登录码' };
             }
-            await client.sendPrivate(Number(cfg.access.adminQq), [
-                await bigFishScreenshotMessage(capture.screenshotPath),
-                { type: 'text', data: { text: '\nDeepSeek 平台登录码，只用于主人扫码；一次登录后会复用浏览器会话。' } },
-            ]);
-            return { sent: true, loginRequired: true, reason: '登录码已私聊发送' };
+            return { sent: true, loginRequired: true, reason: capture.reason || '登录码已私聊发送但等待超时' };
         },
     }));
     console.info('[bigfish-deepseek] bigfish_deepseek_login registered');
