@@ -23,7 +23,7 @@ const server = createServer(async (request, response) => {
     if (token && request.headers.authorization !== `Bearer ${token}`) return send(response, 401, { error: "unauthorized" });
     const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
     if (request.method === "GET" && url.pathname === "/v1/context") {
-      return send(response, 200, store.context(requiredScope(url)));
+      return send(response, 200, store.context(requiredScope(url), url.searchParams.get("q") || ""));
     }
     if (request.method === "PUT" && url.pathname === "/v1/self") {
       const body = await readJson(request);
@@ -92,6 +92,19 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "POST" && url.pathname === "/v1/consolidate") {
       return send(response, 200, { results: await consolidator.consolidateAll(true) });
+    }
+    if (request.method === "POST" && url.pathname === "/v1/relations/backfill") {
+      const body = await readJson(request);
+      const scopes = body.scope ? [String(body.scope)] : store.memoryScopes();
+      const results = [];
+      for (const scope of scopes) {
+        try {
+          results.push(await consolidator.backfillRelations(scope));
+        } catch (error) {
+          results.push({ scope, error: error.message });
+        }
+      }
+      return send(response, 200, { results });
     }
     return send(response, 404, { error: "not found" });
   } catch (error) {

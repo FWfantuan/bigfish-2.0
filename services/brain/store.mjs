@@ -79,6 +79,29 @@ function goalBigramSimilarity(left, right) {
   return (2 * overlap) / (a.size + b.size);
 }
 
+function relationRetrievalScore(relation, query) {
+  const normalizedQuery = String(query || "")
+    .normalize("NFKC")
+    .toLowerCase();
+  const names = [relation.subjectName, relation.objectName]
+    .map((value) => String(value || "").normalize("NFKC").toLowerCase())
+    .filter(Boolean);
+  const qqs = [relation.subjectQq, relation.objectQq]
+    .map(String)
+    .filter(Boolean);
+  const positions = [...names, ...qqs]
+    .map((value) => normalizedQuery.indexOf(value))
+    .filter((index) => index >= 0);
+  const directMatch = positions.length > 0;
+  const mentionPosition = directMatch ? Math.min(...positions) : normalizedQuery.length;
+  const ageDays = Math.max(0, Date.now() - Date.parse(relation.updatedAt || 0)) / 86400000;
+  const recency = 0.65 + 0.35 * Math.exp(-ageDays / 90);
+  return (directMatch ? 100 + Math.max(0, 80 - Math.min(mentionPosition, 80)) : 0)
+    + Number(relation.importance || 0) * 10
+    + Number(relation.confidence || 0) * 5
+    + Math.min(3, Number(relation.evidenceCount || 1)) * recency;
+}
+
 export class BrainStore {
   constructor(path) {
     mkdirSync(dirname(path), { recursive: true });
@@ -100,6 +123,15 @@ export class BrainStore {
         updated_at TEXT NOT NULL, UNIQUE(scope, text)
       );
       CREATE INDEX IF NOT EXISTS facts_scope_rank ON facts(scope, importance DESC, confidence DESC);
+      CREATE TABLE IF NOT EXISTS relations (
+        id TEXT PRIMARY KEY, scope TEXT NOT NULL, subject_qq TEXT NOT NULL DEFAULT '',
+        subject_name TEXT NOT NULL, object_qq TEXT NOT NULL DEFAULT '', object_name TEXT NOT NULL,
+        relation TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '', confidence REAL NOT NULL DEFAULT 0.6,
+        importance REAL NOT NULL DEFAULT 0.5, evidence_count INTEGER NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(scope, subject_qq, subject_name, object_qq, object_name, relation)
+      );
+      CREATE INDEX IF NOT EXISTS relations_scope_rank ON relations(scope, status, importance DESC, confidence DESC, updated_at DESC);
       CREATE TABLE IF NOT EXISTS goals (
         id TEXT PRIMARY KEY, scope TEXT NOT NULL, title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
         priority INTEGER NOT NULL DEFAULT 3, status TEXT NOT NULL DEFAULT 'active',
@@ -321,6 +353,41 @@ export class BrainStore {
       .map(({ retrievalScore, ...row }) => row);
   }
 
+  upsertRelation(scope, relation = {}) {
+    const subject = relation.subject || {};
+    const object = relation.object || {};
+    const subjectQq = String(relation.subject_qq ?? subject.qq ?? '').trim().slice(0, 80);
+    const objectQq = String(relation.object_qq ?? object.qq ?? '').trim().slice(0, 80);
+    const subjectName = String(relation.subject_name ?? subject.name ?? '').trim().slice(0, 180);
+    const objectName = String(relation.object_name ?? object.name ?? '').trim().slice(0, 180);
+    const kind = String(relation.relation || '').trim().slice(0, 120);
+    if ((!subjectQq && !subjectName) || (!objectQq && !objectName) || !kind) return null;
+    if (subjectQq && objectQq && subjectQq === objectQq) return null;
+    const confidence = Math.min(1, Math.max(0, Number(relation.confidence ?? 0.6) || 0.6));
+    const importance = Math.min(1, Math.max(0, Number(relation.importance ?? 0.5) || 0.5));
+    const evidence = String(relation.evidence || '').trim().slice(0, 1200);
+    const stamp = now();
+    this.db.prepare(`
+      INSERT INTO relations(id,scope,subject_qq,subject_name,object_qq,object_name,relation,evidence,confidence,importance,evidence_count,status,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?)
+      ON CONFLICT(scope,subject_qq,subject_name,object_qq,object_name,relation) DO UPDATE SET
+        evidence=CASE WHEN excluded.evidence<>'' THEN excluded.evidence ELSE relations.evidence END,
+        confidence=MAX(relations.confidence,excluded.confidence), importance=MAX(relations.importance,excluded.importance),
+        evidence_count=relations.evidence_count+1, status='active', updated_at=excluded.updated_at
+    `).run(randomUUID(), scope, subjectQq, subjectName, objectQq, objectName, kind, evidence, confidence, importance, 'active', stamp, stamp);
+    return this.relations(scope, 1_000).find((item) => item.subjectQq === subjectQq && item.subjectName === subjectName
+      && item.objectQq === objectQq && item.objectName === objectName && item.relation === kind) || null;
+  }
+
+  relations(scope, limit = 30) {
+    return this.db.prepare(`
+      SELECT subject_qq AS subjectQq,subject_name AS subjectName,object_qq AS objectQq,object_name AS objectName,
+        relation,evidence,confidence,importance,evidence_count AS evidenceCount,status,updated_at AS updatedAt
+      FROM relations WHERE scope=? AND status='active'
+      ORDER BY importance DESC,confidence DESC,evidence_count DESC,updated_at DESC LIMIT ?
+    `).all(scope, limit);
+  }
+
   recentEvents(scope, limit = 30) {
     return this.db.prepare("SELECT * FROM events WHERE scope=? ORDER BY created_at DESC LIMIT ?")
       .all(scope, limit)
@@ -368,6 +435,7 @@ export class BrainStore {
     this.db.prepare("INSERT INTO reflections(id,scope,summary,lessons_json,source_json,created_at) VALUES (?,?,?,?,?,?)")
       .run(item.id, scope, item.summary, JSON.stringify(lessons), JSON.stringify(source), item.createdAt);
     for (const fact of source.facts || []) this.addFact(scope, fact.text, fact);
+    for (const relation of source.relations || []) this.upsertRelation(scope, relation);
     for (const skill of source.skills || []) this.upsertSkill(scope, skill);
     return item;
   }
@@ -454,10 +522,18 @@ export class BrainStore {
       .map((row) => ({ ...row, payload: json(row.payload_json, {}) }));
   }
 
-  context(scope) {
+  context(scope, query = "") {
     const localSelf = this.getSelf(scope);
     const globalSelf = scope === "global" ? localSelf : this.getSelf("global");
     const localFacts = this.facts(scope, 30);
+    const localRelations = this.relations(scope, 120);
+    const globalRelations = scope === "global" ? [] : this.relations("global", 40);
+    const relations = [...localRelations, ...globalRelations]
+      .filter((item, index, all) => all.findIndex((candidate) => candidate.subjectQq === item.subjectQq
+        && candidate.subjectName === item.subjectName && candidate.objectQq === item.objectQq
+        && candidate.objectName === item.objectName && candidate.relation === item.relation) === index)
+      .sort((left, right) => relationRetrievalScore(right, query) - relationRetrievalScore(left, query))
+      .slice(0, 50);
     const globalFacts = scope === "global" ? [] : this.globalFacts(20);
     const facts = [...localFacts, ...globalFacts]
       .filter((item, index, all) => all.findIndex((candidate) => candidate.text === item.text) === index)
@@ -472,6 +548,7 @@ export class BrainStore {
       self: scope === "global" || localSelf.updatedAt ? { ...globalSelf, ...localSelf } : globalSelf,
       goals: this.goals(scope),
       facts,
+      relations,
       recentEvents: this.recentEvents(scope, 12),
       recentActions: this.recentActions(scope, 12),
       reflections: this.reflections(scope, 5).map(({ summary, lessons, created_at }) => ({ summary, lessons, createdAt: created_at })),
@@ -491,5 +568,15 @@ export class BrainStore {
 
   allGoalScopes() {
     return this.db.prepare("SELECT DISTINCT scope FROM goals").all().map((row) => row.scope);
+  }
+
+  memoryScopes() {
+    return this.db.prepare(`
+      SELECT scope FROM (
+        SELECT scope FROM events
+        UNION ALL SELECT scope FROM facts
+        UNION ALL SELECT scope FROM reflections
+      ) GROUP BY scope ORDER BY COUNT(*) DESC
+    `).all().map((row) => row.scope);
   }
 }

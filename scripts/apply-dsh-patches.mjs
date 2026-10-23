@@ -962,10 +962,10 @@ await patch(
   const source = await readFile(qqPlugin, "utf8");
   const marker = "// BIGFISH_OWNER_STOP_SHORTCUT";
   if (!source.includes(marker)) {
-    let next = source.replace(
-      "import { readFile, readdir } from 'node:fs/promises';",
-      "import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';",
-    );
+    const fsImport = "import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';";
+    let next = source
+      .replace("import { readFile } from 'node:fs/promises';", fsImport)
+      .replace("import { readFile, readdir } from 'node:fs/promises';", fsImport);
     const routeAnchor = "    const routeWithHistory = async (evt) => {\n        await bigfishQqHistory.observe(evt);";
     const routeReplacement = "    const routeWithHistory = async (evt) => {\n        if (await handleBigFishOwnerStopShortcut(evt, client, cfg)) return;\n        await bigfishQqHistory.observe(evt);";
     next = next.replace(routeAnchor, routeReplacement);
@@ -993,8 +993,11 @@ async function handleBigFishOwnerStopShortcut(evt, client, cfg) {
     return true;
 }
 `;
+    const helperAnchor = "// BIGFISH_QQ_FRAMES_TOOL";
+    next = next.includes(helperAnchor)
+      ? next.replace(helperAnchor, `${functionText.trim()}\n\n${helperAnchor}`)
+      : next.trimEnd() + '\n' + functionText;
     if (!next.includes("handleBigFishOwnerStopShortcut")) throw new Error(`owner stop shortcut target not found: ${qqPlugin}`);
-    next = next.trimEnd() + '\\n' + functionText;
     await writeFile(qqPlugin, next, "utf8");
     console.log(`patched owner stop shortcut: ${qqPlugin}`);
   } else {
@@ -1008,8 +1011,12 @@ async function handleBigFishOwnerStopShortcut(evt, client, cfg) {
   const registration = "    const unregisterBigFishMeme = registerBigFishMemeTool(ctx, client, cfg, officialMode);";
   const cleanup = "        unregisterBigFishMeme?.();";
   let next = source
-    .split(`${registration}\n${registration}`).join(registration)
-    .split(`${cleanup}\n${cleanup}`).join(cleanup);
+    .split("\n")
+    .filter((line, index, lines) => (
+      (line !== registration && line !== cleanup)
+      || lines.indexOf(line) === index
+    ))
+    .join("\n");
   if (!source.includes("bigfish_send_meme")) {
     next = next
       .replace(
@@ -1017,12 +1024,12 @@ async function handleBigFishOwnerStopShortcut(evt, client, cfg) {
         "import { readFile, readdir } from 'node:fs/promises';",
       )
       .replace(
-        "    const unregisterBigFishScreenshot = registerBigFishScreenshotTool(ctx, client, cfg, officialMode);",
-        registration + "\n    const unregisterBigFishScreenshot = registerBigFishScreenshotTool(ctx, client, cfg, officialMode);",
+        "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);",
+        "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);\n" + registration,
       )
       .replace(
-        "        unregisterBigFishScreenshot?.();",
-        cleanup + "\n        unregisterBigFishScreenshot?.();",
+        "        unregisterBigFishFrames?.();",
+        "        unregisterBigFishFrames?.();\n" + cleanup,
       );
     if (!next.includes("registerBigFishMemeTool")) throw new Error(`meme tool registration target not found: ${qqPlugin}`);
   }
@@ -1041,7 +1048,6 @@ async function handleBigFishOwnerStopShortcut(evt, client, cfg) {
 {
   const source = await readFile(qqPlugin, "utf8");
   const snippet = await readFile(qqScreenshotSnippet, "utf8");
-  const memeSnippet = await readFile(qqMemeSnippet, "utf8");
   const frameRegistration = "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);";
   const screenshotRegistration = "    const unregisterBigFishScreenshot = registerBigFishScreenshotTool(ctx, client, cfg, officialMode);";
   const frameCleanup = "        unregisterBigFishFrames?.();";
@@ -1055,9 +1061,10 @@ async function handleBigFishOwnerStopShortcut(evt, client, cfg) {
     .replace(frameCleanup, `${frameCleanup}\n${screenshotCleanup}`);
   const marker = "// BIGFISH_QQ_SHARE_SCREENSHOT_TOOL";
   const markerIndex = next.indexOf(marker);
+  const memeMarkerIndex = next.indexOf("// BIGFISH_QQ_MEME_TOOL", markerIndex + 1);
   next = markerIndex >= 0
-    ? `${next.slice(0, markerIndex)}${snippet.trimEnd()}\n\n${memeSnippet.trimEnd()}\n`
-    : `${next.trimEnd()}\n\n${snippet.trimEnd()}\n\n${memeSnippet.trimEnd()}\n`;
+    ? `${next.slice(0, markerIndex)}${snippet.trimEnd()}\n${memeMarkerIndex >= 0 ? `\n${next.slice(memeMarkerIndex)}` : ""}`
+    : `${next.trimEnd()}\n\n${snippet.trimEnd()}\n`;
   if (next !== source) {
     await writeFile(qqPlugin, next, "utf8");
     console.log(`patched screenshot sharing: ${qqPlugin}`);
@@ -1152,18 +1159,22 @@ async function handleBigFishOwnerStopShortcut(evt, client, cfg) {
 {
   const source = await readFile(qqPlugin, "utf8");
   const snippet = await readFile(qqRecentHistorySnippet, "utf8");
-  const injection = [
+  const canonicalInjection = [
     "    const bigfishQqHistory = createBigFishQqHistory(cfg);",
     "    globalThis.__bigfishQqHistory = bigfishQqHistory;",
     "    const routeWithHistory = async (evt) => {",
+    ...(source.includes("handleBigFishOwnerStopShortcut")
+      ? ["        if (await handleBigFishOwnerStopShortcut(evt, client, cfg)) return;"]
+      : []),
     "        await bigfishQqHistory.observe(evt);",
     "        await router.route(evt);",
     "    };",
   ].join("\n");
+  const historyBlockPattern = /(?:    const bigfishQqHistory = createBigFishQqHistory\(cfg\);\n    globalThis\.__bigfishQqHistory = bigfishQqHistory;\n    const routeWithHistory = async \(evt\) => \{\n(?:        if \(await handleBigFishOwnerStopShortcut\(evt, client, cfg\)\) return;\n)?        await bigfishQqHistory\.observe\(evt\);\n        await router\.route\(evt\);\n    \};\n)+/g;
   const routerLine = "    const router = new MessageRouter(gate, outbound, interactions);";
   let next = source
-    .replaceAll(`\n${injection}`, "")
-    .replace(routerLine, `${routerLine}\n${injection}`)
+    .replace(historyBlockPattern, "")
+    .replace(routerLine, `${routerLine}\n${canonicalInjection}`)
       .replaceAll(
         "        void router.route(evt);",
         "        void routeWithHistory(evt).catch((error) => console.warn(`[dsh-qq-bridge] message route failed: ${error instanceof Error ? error.message : String(error)}`));",
@@ -1370,10 +1381,11 @@ function bigFishExtractCurrentMessage(text) {
 async function bigFishBrainEnrich(sessionKey, payload) {
     const base = process.env.BIGFISH_BRAIN_URL || 'http://127.0.0.1:15621';
     const token = process.env.BIGFISH_BRAIN_TOKEN || '';
+    const currentMessage = bigFishExtractCurrentMessage(payload).slice(0, 2000);
     const history = await globalThis.__bigfishQqHistory?.promptFor(payload).catch(() => '') || '';
     try {
         const scope = bigFishBrainScope(sessionKey);
-        const response = await fetch(\`\${base}/v1/context?scope=\${encodeURIComponent(scope)}\`, {
+        const response = await fetch(\`\${base}/v1/context?scope=\${encodeURIComponent(scope)}&q=\${encodeURIComponent(currentMessage)}\`, {
             headers: token ? { authorization: \`Bearer \${token}\` } : {},
             signal: AbortSignal.timeout(4000),
         });
@@ -1395,6 +1407,7 @@ async function bigFishBrainEnrich(sessionKey, payload) {
             self: brain.self,
             goals: brain.goals,
             facts: brain.facts,
+            relations: brain.relations,
             skills: brain.skills,
             reflections: brain.reflections,
             approvals: brain.approvals,
@@ -1422,6 +1435,36 @@ async function bigFishBrainEnrich(sessionKey, payload) {
 
 await patch(
   qqExecutor,
+  "BIGFISH_QQ_RELATION_CONTEXT",
+  (source) => source.replace(
+    "            facts: brain.facts,\n            skills: brain.skills,",
+    "            facts: brain.facts,\n            // BIGFISH_QQ_RELATION_CONTEXT\n            relations: brain.relations,\n            skills: brain.skills,",
+  ),
+  { allowMissing: true },
+);
+
+await patch(
+  qqExecutor,
+  "BIGFISH_QQ_RELATION_QUERY",
+  (source) => source
+    .replace(
+      "    const token = process.env.BIGFISH_BRAIN_TOKEN || '';\n    const history = await globalThis.__bigfishQqHistory?.promptFor(payload).catch(() => '') || '';",
+      [
+        "    const token = process.env.BIGFISH_BRAIN_TOKEN || '';",
+        "    // BIGFISH_QQ_RELATION_QUERY",
+        "    const currentMessage = bigFishExtractCurrentMessage(payload).slice(0, 2000);",
+        "    const history = await globalThis.__bigfishQqHistory?.promptFor(payload).catch(() => '') || '';",
+      ].join("\n"),
+    )
+    .replace(
+      "        const response = await fetch(`${base}/v1/context?scope=${encodeURIComponent(scope)}`, {",
+      "        const response = await fetch(`${base}/v1/context?scope=${encodeURIComponent(scope)}&q=${encodeURIComponent(currentMessage)}`, {",
+    ),
+  { allowMissing: true },
+);
+
+await patch(
+  qqExecutor,
   "BIGFISH_QQ_EMPTY_REPLY",
   (source) =>
     source.replace(
@@ -1432,6 +1475,92 @@ await patch(
       ].join("\n"),
     ),
 );
+
+{
+  const localDefineTool = [
+    "// BIGFISH_LOCAL_DEFINE_TOOL",
+    "// QQ Bridge custom tools must not depend on a separately installed dsh-tools",
+    "// package. Keep the small schema conversion local so the plugin imports cleanly.",
+    "function bigFishJsonSchema(spec) {",
+    "    if (spec == null || typeof spec !== 'object') return spec;",
+    "    if (Array.isArray(spec)) return spec.map(bigFishJsonSchema);",
+    "    const schema = {};",
+    "    const required = [];",
+    "    for (const [key, value] of Object.entries(spec)) {",
+    "        if (key === 'required') {",
+    "            if (typeof value === 'boolean' && value) required.push('__self__');",
+    "            continue;",
+    "        }",
+    "        if (key === 'properties' && value && typeof value === 'object') {",
+    "            schema.properties = {};",
+    "            for (const [name, property] of Object.entries(value)) {",
+    "                if (property?.required === true) required.push(name);",
+    "                schema.properties[name] = bigFishJsonSchema(property);",
+    "            }",
+    "            continue;",
+    "        }",
+    "        schema[key] = key === 'items' || key === 'oneOf' ? bigFishJsonSchema(value) : value;",
+    "    }",
+    "    if (required.length && !required.includes('__self__')) schema.required = required;",
+    "    return schema;",
+    "}",
+    "function defineTool(options) {",
+    "    const parameterSchema = bigFishJsonSchema({",
+    "        type: 'object',",
+    "        properties: options.parameters || {},",
+    "        additionalProperties: false,",
+    "    });",
+    "    const definition = {",
+    "        name: options.name,",
+    "        description: options.description,",
+    "        parameters: parameterSchema,",
+    "        output: {",
+    "            schema: bigFishJsonSchema(options.output?.schema || { type: 'object', additionalProperties: false, properties: {} }),",
+    "            render: options.output?.render,",
+    "        },",
+    "        async execute(args, exec) { return options.execute(args, exec); },",
+    "    };",
+    "    if (options.timeoutMs !== undefined) definition.timeoutMs = options.timeoutMs;",
+    "    if (options.deferLoading === true) definition.deferLoading = true;",
+    "    if (typeof options.isConcurrencySafe === 'function') definition.isConcurrencySafe = (args) => options.isConcurrencySafe(args);",
+    "    if (typeof options.finalizeContent === 'function') definition.finalizeContent = (exec, result) => options.finalizeContent(exec, result);",
+    "    if (typeof options.projectContent === 'function') definition.projectContent = (exec, result) => options.projectContent(exec, result);",
+    "    if (options.output?.presentationMeta) definition.output.presentationMeta = options.output.presentationMeta;",
+    "    return definition;",
+    "}",
+  ].join("\n");
+  await patch(
+    qqPlugin,
+    "BIGFISH_LOCAL_DEFINE_TOOL",
+    (source) => source.replace(
+      "import { defineTool } from '@deepseek-ai/dsh-tools';",
+      localDefineTool,
+    ),
+    { allowMissing: true },
+  );
+}
+
+{
+  const source = await readFile(qqPlugin, "utf8");
+  const seen = new Set();
+  const lines = source.split("\n").filter((line) => {
+    if (!/^\s+(?:const unregisterBigFish\w+\s*=|unregisterBigFish\w+\?\.\(\);)/.test(line)) return true;
+    const key = line.trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const next = lines.join("\n").replace(
+    "        unregisterBigFishScreenshot?.();\n        unregisterBigFishMeme?.();\n        unregisterBigFishGameplayAnswer?.();",
+    "        unregisterBigFishMeme?.();\n        unregisterBigFishScreenshot?.();\n        unregisterBigFishGameplayAnswer?.();",
+  );
+  if (next !== source) {
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`deduplicated QQ Bridge registrations: ${qqPlugin}`);
+  } else {
+    console.log(`already deduplicated QQ Bridge registrations: ${qqPlugin}`);
+  }
+}
 
 for (const browserPlugin of browserPlugins) {
   await patch(

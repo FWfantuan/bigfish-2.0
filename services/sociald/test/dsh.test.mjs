@@ -15,6 +15,31 @@ test("extracts JSON from incidental prose", () => {
   assert.equal(parsed.target_qq, "1");
 });
 
+test("passes large prompts through stdin instead of the Windows command line", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bigfish-dsh-test-"));
+  const bin = join(directory, "stdin-dsh.mjs");
+  try {
+    await writeFile(
+      bin,
+      [
+        'let input = "";',
+        'process.stdin.setEncoding("utf8");',
+        'process.stdin.on("data", (chunk) => { input += chunk; });',
+        'process.stdin.on("end", () => {',
+        '  process.stdout.write(JSON.stringify({ type: "final", text: JSON.stringify({ length: input.length }) }) + "\\n");',
+        '});',
+      ].join("\n"),
+      "utf8",
+    );
+    const dsh = new DshDecisionMaker({ bin, profile: "test" });
+    const prompt = "x".repeat(100_000);
+    const result = await dsh.decide({ prompt, timeoutMs: 5000 });
+    assert.equal(result.decision.length, prompt.length);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("finishes after the final event even when a tool keeps the child alive", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bigfish-dsh-test-"));
   const bin = join(directory, "hanging-dsh.mjs");

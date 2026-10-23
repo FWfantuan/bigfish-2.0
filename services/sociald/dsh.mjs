@@ -32,13 +32,17 @@ export class DshDecisionMaker {
     if (!this.bin) throw new Error(`DSH entry not found: ${DSH_BIN}; run pnpm install`);
     const args = [this.bin, "--profile", this.config.profile, "--json"];
     if (sessionId) args.push("--session-id", sessionId);
-    args.push(prompt);
+    // Windows limits a process command line to roughly 32K characters.
+    // DSH headless supports "-" to read the task from stdin, so keep large
+    // Brain prompts out of argv.
+    args.push("-");
     const child = spawn(process.execPath, args, {
       cwd: process.cwd(),
       env: process.env,
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
+    child.stdin.end(String(prompt || ""), "utf8");
     let stdout = "";
     let stderr = "";
     let stdoutBuffer = "";
