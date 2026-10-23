@@ -32,17 +32,17 @@ projection，并汇总所有本地会话的：
 
 ## 支持码
 
-DeepSeek 没有公开的“任意金额直接捐赠”API。QQ 里发送的是主人从 DeepSeek
-充值页保存到本机的支持码；捐赠者在支付页面自行确认金额和付款。
+DeepSeek 没有公开的“任意金额直接捐赠”API。`bigfish_support_deepseek` 会
+在收到支持请求时用持久 Edge profile 现场打开官方充值页，确认仍处于登录状态
+后截取最新页面并发到当前白名单群。截图保存在
+`data/support/generated/`，十分钟后自动清理。
 
-支持码只从以下目录读取：
+如果 DeepSeek 登录过期，群里只会收到“暂时不可用”，不会暴露登录二维码。
+主人在私聊调用 `bigfish_deepseek_login` 后，工具会把最新的官方微信登录码
+私聊发给主人。扫码登录一次后，后续支持请求继续复用持久浏览器会话。
 
-```text
-data/support/deepseek-tip-qr.{png,jpg,jpeg,webp}
-```
-
-也可以设置 `BIGFISH_DEEPSEEK_TIP_QR` 指定同目录下的文件。`data/` 已被 Git
-忽略，支付码不会提交到仓库。工具只允许向 `BIGFISH_ALLOWED_GROUPS` 中的群发送。
+工具只允许向 `BIGFISH_ALLOWED_GROUPS` 中的群发送充值页面。`data/` 已被 Git
+忽略，登录状态、页面截图和支付信息不会提交到仓库。
 
 支持行为必须说明为自愿支持 API 开销，款项进入主人的 DeepSeek API 余额，不能
 承诺商品、会员、抽奖或其他回报。

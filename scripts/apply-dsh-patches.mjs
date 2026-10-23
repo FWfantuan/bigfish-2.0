@@ -996,13 +996,15 @@ await patch(
   next = tipUpdated ?? `${next.trimEnd()}\n\n// BIGFISH_DEEPSEEK_TIP_TOOL\n${tipSnippet.trimEnd()}\n`;
   const frameRegistration = "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);";
   const usageRegistration = "    const unregisterBigFishDeepSeekUsage = registerBigFishDeepSeekUsageTool(ctx);";
+  const loginRegistration = "    const unregisterBigFishDeepSeekLogin = registerBigFishDeepSeekLoginTool(ctx, client, cfg);";
   const tipRegistration = "    const unregisterBigFishDeepSeekTip = registerBigFishDeepSeekTipTool(ctx, client);";
   const frameCleanup = "        unregisterBigFishFrames?.();";
   const usageCleanup = "        unregisterBigFishDeepSeekUsage?.();";
+  const loginCleanup = "        unregisterBigFishDeepSeekLogin?.();";
   const tipCleanup = "        unregisterBigFishDeepSeekTip?.();";
   next = next
-    .replace(frameRegistration, `${frameRegistration}\n${usageRegistration}\n${tipRegistration}`)
-    .replace(frameCleanup, `${frameCleanup}\n${usageCleanup}\n${tipCleanup}`);
+    .replace(frameRegistration, `${frameRegistration}\n${usageRegistration}\n${loginRegistration}\n${tipRegistration}`)
+    .replace(frameCleanup, `${frameCleanup}\n${usageCleanup}\n${loginCleanup}\n${tipCleanup}`);
   if (next !== source) {
     await writeFile(qqPlugin, next, "utf8");
     console.log(`patched DeepSeek usage and support tools: ${qqPlugin}`);
