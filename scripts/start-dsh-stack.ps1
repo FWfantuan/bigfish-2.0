@@ -11,6 +11,9 @@ Get-Content -LiteralPath $envFile | ForEach-Object {
         $dshEnv[$matches[1]] = $matches[2]
     }
 }
+foreach ($key in $dshEnv.Keys) {
+    Set-Item -Path "Env:$key" -Value $dshEnv[$key]
+}
 $botQq = $dshEnv['BIGFISH_BOT_QQ']
 if (-not $botQq) { throw 'BIGFISH_BOT_QQ is missing from DSH_HOME/.env' }
 

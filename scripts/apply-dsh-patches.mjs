@@ -31,6 +31,8 @@ const qqFramesSnippet = resolve("patches/qq-frames-tool.snippet.js");
 const qqMemeSnippet = resolve("patches/qq-meme-tool.snippet.js");
 const qqGameplayAnswerSnippet = resolve("patches/qq-gameplay-answer-tool.snippet.js");
 const qqGameRequestSnippet = resolve("patches/qq-game-request-tool.snippet.js");
+const qqDeepSeekUsageSnippet = resolve("patches/qq-deepseek-usage-tool.snippet.js");
+const qqDeepSeekTipSnippet = resolve("patches/qq-deepseek-tip-tool.snippet.js");
 const qqRecentHistorySnippet = resolve("patches/qq-recent-history.snippet.js");
 const qqScreenshotSnippet = resolve("patches/qq-screenshot-tool.snippet.js");
 const playProfilePatch = resolve(
@@ -955,6 +957,57 @@ await patch(
     console.log(`patched: ${qqPlugin}`);
   } else {
     throw new Error(`frames tool marker missing while base patch exists: ${qqPlugin}`);
+  }
+}
+
+{
+  const source = await readFile(qqPlugin, "utf8");
+  const usageSnippet = await readFile(qqDeepSeekUsageSnippet, "utf8");
+  const tipSnippet = await readFile(qqDeepSeekTipSnippet, "utf8");
+  const replaceRegion = (text, startMarker, endMarker, body) => {
+    const start = text.indexOf(startMarker);
+    const end = start >= 0 ? text.indexOf(endMarker, start + startMarker.length) : -1;
+    return start >= 0 && end > start
+      ? `${text.slice(0, start)}${startMarker}\n${body.trimEnd()}\n\n${text.slice(end)}`
+      : null;
+  };
+  let next = source
+    .replace(
+      "export const inject = ['agentLoop', 'agentPresets', 'sessionQuery'];",
+      "export const inject = ['agentLoop', 'agentPresets', 'sessionQuery', 'sessionProjections'];",
+    )
+    .replace(
+      "export const inject = ['agentLoop', 'agentPresets', 'sessionQuery', 'tools'];",
+      "export const inject = ['agentLoop', 'agentPresets', 'sessionQuery', 'tools', 'sessionProjections'];",
+    );
+  const usageUpdated = replaceRegion(
+    next,
+    "// BIGFISH_DEEPSEEK_USAGE_TOOL",
+    "// BIGFISH_OWNER_STOP_SHORTCUT",
+    usageSnippet,
+  );
+  next = usageUpdated ?? `${next.trimEnd()}\n\n// BIGFISH_DEEPSEEK_USAGE_TOOL\n${usageSnippet.trimEnd()}\n`;
+  const tipUpdated = replaceRegion(
+    next,
+    "// BIGFISH_DEEPSEEK_TIP_TOOL",
+    "// BIGFISH_QQ_FRAMES_TOOL",
+    tipSnippet,
+  );
+  next = tipUpdated ?? `${next.trimEnd()}\n\n// BIGFISH_DEEPSEEK_TIP_TOOL\n${tipSnippet.trimEnd()}\n`;
+  const frameRegistration = "    const unregisterBigFishFrames = registerBigFishFramesTool(ctx, client, cfg, officialMode);";
+  const usageRegistration = "    const unregisterBigFishDeepSeekUsage = registerBigFishDeepSeekUsageTool(ctx);";
+  const tipRegistration = "    const unregisterBigFishDeepSeekTip = registerBigFishDeepSeekTipTool(ctx, client);";
+  const frameCleanup = "        unregisterBigFishFrames?.();";
+  const usageCleanup = "        unregisterBigFishDeepSeekUsage?.();";
+  const tipCleanup = "        unregisterBigFishDeepSeekTip?.();";
+  next = next
+    .replace(frameRegistration, `${frameRegistration}\n${usageRegistration}\n${tipRegistration}`)
+    .replace(frameCleanup, `${frameCleanup}\n${usageCleanup}\n${tipCleanup}`);
+  if (next !== source) {
+    await writeFile(qqPlugin, next, "utf8");
+    console.log(`patched DeepSeek usage and support tools: ${qqPlugin}`);
+  } else {
+    console.log(`already patched DeepSeek usage and support tools: ${qqPlugin}`);
   }
 }
 

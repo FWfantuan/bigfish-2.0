@@ -8,6 +8,7 @@
 | 目标、主动性、自学习复盘 | `services/brain/consolidator.mjs`、`services/sociald`、`services/mumud` | 已迁移 | — |
 | 直接回复、60 秒接话窗口 | `services/replyd`、QQ Bridge | 已迁移 | — |
 | B 站搜索、字幕、关键帧 | QQ Bridge patches、B 站 media service | 已迁移 | — |
+| DeepSeek 余额、Token 用量、API 支持码 | QQ Bridge `bigfish_deepseek_usage` / `bigfish_support_deepseek` | 已迁移 | — |
 | Android / MuMu 控制 | `services/mumud`、DSH Android tools | 已迁移 | — |
 | 明日方舟普通战斗与肉鸽 | `services/mumud`、MAA Copilot | 已迁移并持续实测 | — |
 | FF14 鱼窗、PVP、主线、Wiki、乐谱、官方图片 | 旧 `astrbot_plugin_ff14_companion` | 待迁移 | 第一批，只读 |
